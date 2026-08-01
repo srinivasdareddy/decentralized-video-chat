@@ -2,9 +2,11 @@
 
 ## 1. Context
 
-Goal: a room where **several people share their screens at the same time** while **all talking**, with **no server infrastructure**, delivered as a **zero-install web app** — open a link, you are in the call.
+Goal: a room where **several people share their screens at the same time** while **all talking**, with **no server infrastructure**, delivered as a **web app you never have to install** — open a link, you are in the call.
 
-**No install of any kind.** No PWA install prompt, no "Add to Home Screen", no manifest, no downloaded binary. A URL is the entire distribution mechanism. This suits disposable, single-use rooms: the moment you ask someone to install something to take a call, the link stops working as an invitation.
+**The app is a PWA, but installation is never required and never prompted.** It ships a manifest and a service worker, so a browser that wants to offer "Install" or "Add to Home Screen" may do so, and a returning user can keep it as a standalone window. But there is **no install button, no `beforeinstallprompt` interstitial, no nag**. A URL is the entire distribution mechanism, and the full app works on first click with nothing installed.
+
+This distinction matters for disposable, single-use rooms: the moment an invitee is asked to install something to take a call, the link stops working as an invitation. Installability is a bonus for the host who uses it weekly — never a toll on the guest who joins once.
 
 The original proposal was Pear (Holepunch). This document records why Pear cannot serve a browser app, and specifies the architecture that delivers the same core idea on the open web.
 
@@ -19,9 +21,9 @@ Pear is not usable here. This is structural, not a difficulty:
 | Runs in a browser | Pear targets **desktop, terminal, mobile** runtimes only. No web target. |
 | Transport | Hyperswarm/HyperDHT holepunch over **raw UDP (UDX)**. Browsers cannot open UDP sockets — no API exists, by design. |
 | Browser bridge | `hyperswarm-dht-relay` exists, but needs a **WebSocket relay server you run** (defeats "no servers") and is flagged *"Do not use it in production."* |
-| Distribution | Pear apps are downloaded desktop binaries — exactly what the zero-install requirement rules out. |
+| Distribution | Pear apps are downloaded desktop binaries. A guest cannot join by clicking a link. |
 
-**Conclusion:** Pear ⇒ downloaded desktop app. Zero-install web ⇒ WebRTC. The zero-install requirement settles it: WebRTC.
+**Conclusion:** Pear ⇒ downloaded desktop app. Link-openable web app ⇒ WebRTC. The requirement that a room link just works settles it: WebRTC.
 
 The core idea itself is proven viable — Keet (Holepunch's own app) does serverless P2P calls with screen share. The question was only ever the transport.
 
@@ -85,13 +87,16 @@ Mitigations that keep us serverless:
 
 ## 6. Stack
 
-Deliberately thin — no framework lock-in, no build-time magic, and **no service worker**:
+Deliberately thin — no framework lock-in, no build-time magic:
 
 - **Vite** + vanilla TS (fast, static output, zero runtime deps)
 - **Trystero** — serverless WebRTC matchmaking (Nostr strategy)
+- **vite-plugin-pwa** (Workbox) — manifest + service worker, `registerType: 'autoUpdate'`
 - Native `RTCPeerConnection` / `getDisplayMedia` — no WebRTC wrapper library
 
-No service worker is deliberate, not an omission. A live call cannot work offline, so a SW buys nothing here while introducing stale-cache bugs — the classic failure where users hold a cached build and cannot join rooms created by a newer one. Ship a small, fast, always-fresh page instead. Keep the JS bundle lean enough that first paint beats the time it takes to read the room name.
+**Service worker caching must be update-first.** The obvious hazard in a P2P app with no backend is version skew: a peer holding a stale cached build tries to join a room created by a newer one, and the wire format silently disagrees. There is no server to arbitrate. So: `autoUpdate` with `skipWaiting` + `clientsClaim`, precache the shell but never serve a stale `index.html`, and treat the signaling payload as versioned — on mismatch, show "reload to update" rather than half-joining a room.
+
+Keep the bundle lean enough that first paint beats the time it takes to read the room name; the service worker is an accelerator for repeat visits, not the delivery path for the first one.
 
 ## 7. Milestones
 
@@ -101,23 +106,26 @@ No service worker is deliberate, not an omission. A live call cannot work offlin
 4. **Single screen share** — `getDisplayMedia`, `addTrack`, render remote screen. Track↔owner mapping over data channel.
 5. **Multi-share (core feature)** — several peers sharing concurrently; responsive grid; per-tile pin/fullscreen.
 6. **Resilience** — ICE failure detection with an explicit "couldn't connect directly (strict NAT)" message; reconnect; room-size cap with warning.
-7. **Polish** — device pickers, keyboard shortcuts, dark mode, PiP.
+7. **PWA layer** — manifest (icons, `display: standalone`, theme colors) + auto-updating service worker. Deliberately late: installability is an enhancement for repeat users, never a gate on the core flow, so it must land on an app that is already complete without it. Explicitly **no** install button or prompt.
+8. **Polish** — device pickers, keyboard shortcuts, dark mode, PiP.
 
 Feature-complete on the core idea at milestone 5; 1–4 are the runway.
 
-Because a URL is the only distribution channel, the join flow carries weight the UI would otherwise share with an install step: the room link must work on first click, with no account, no lobby, and permission prompts requested only at the moment they are needed (mic on join, screen only when the user clicks Share).
+Because a URL is the real distribution channel, the join flow carries weight the UI would otherwise share with an install step: the room link must work on first click, with no account, no lobby, no install interstitial, and permission prompts requested only at the moment they are needed (mic on join, screen only when the user clicks Share).
 
 ## 8. Known limitations (state these in the README, not in a support thread)
 
-- **iOS/iPadOS Safari cannot screen share.** `getDisplayMedia` is unimplemented. iOS users can open the link, talk, and *view* others' screens — but cannot share their own. No workaround exists on the open web, and zero-install rules out the native app that would be the only escape. Detect iOS and hide the Share button rather than letting it fail.
+- **iOS/iPadOS Safari cannot screen share.** `getDisplayMedia` is unimplemented, and installing the PWA to the home screen does **not** change this — an installed PWA on iOS is still Safari's engine with the same gap. iOS users can open the link, talk, and *view* others' screens, but never share their own. The only escape would be a native app, which the no-install-required goal rules out. Detect iOS and hide the Share button rather than letting it fail.
 - **~10% of peer pairs won't connect** without TURN (symmetric NAT, some corporate networks).
 - **4–6 participant ceiling**, per the mesh math above.
 - Public Nostr relays are best-effort; Trystero should be configured with several for redundancy.
 
 ## 9. Verification
 
-- `npm run build && npm run preview` — served over HTTPS (required for `getUserMedia` and `getDisplayMedia`).
-- **Cold link:** paste a room URL into a fresh browser profile with no prior state — lands directly in the call, no install prompt, no account, no service worker registered.
+- `npm run build && npm run preview` — served over HTTPS (required for `getUserMedia`, `getDisplayMedia`, and service worker registration).
+- **Cold link (the key test):** paste a room URL into a fresh browser profile with no prior state — lands directly in the call, with **no install prompt or interstitial shown at any point**, no account, no lobby.
+- **PWA present but passive:** Lighthouse reports the app as installable; the browser's own address-bar install affordance appears; the app still never surfaces one itself.
+- **Update safety:** load the app, deploy a new build, reload — the client picks up the new version rather than serving a stale shell. Then verify a stale client and a fresh client cannot silently half-join the same room.
 - **Two-peer:** two browser profiles, same room code — audio both directions, one screen shared and visible.
 - **Multi-share (the actual acceptance test):** three peers, at least two sharing screens *simultaneously*, all on audio. Confirm every peer sees every live screen at once and hears everyone.
 - **Cross-network:** peers on genuinely different networks (not just two tabs) to exercise real NAT traversal.
@@ -127,6 +135,8 @@ Because a URL is the only distribution channel, the join flow carries weight the
 
 Recorded so it is not relitigated. Pear (Electron + `pear-runtime`, a Bare worker owning Hyperswarm, WebCodecs encode/decode, media framed over Protomux on the Noise stream) gives a stronger serverless guarantee than this plan: true DHT-based zero-infrastructure, no STUN, no public relays.
 
-It is rejected because it requires users to **download and install a desktop binary**, which the zero-install requirement forbids outright. That constraint is not negotiable against a marginal gain in serverlessness — and the gain really is marginal, since under this plan no server ever sees media either. It would also mean hand-rolling the media pipeline that WebRTC provides for free: congestion control, jitter buffering, packet loss concealment, and echo cancellation.
+It is rejected because it requires every participant to **download and install a desktop binary** before they can join — a guest cannot simply click a room link. Note this is not in tension with shipping a PWA: an optional, browser-native install for repeat users is a different thing from a mandatory binary download for every guest.
 
-Revisit only if the zero-install requirement is dropped.
+The tradeoff is not close. The gain is marginal, since under this plan no server ever sees media either, while the cost is hand-rolling the media pipeline WebRTC provides for free: congestion control, jitter buffering, packet loss concealment, and echo cancellation.
+
+Revisit only if the browser ceases to be the target.
