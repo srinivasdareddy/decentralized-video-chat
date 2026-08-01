@@ -113,6 +113,26 @@ Feature-complete on the core idea at milestone 5; 1–4 are the runway.
 
 Because a URL is the real distribution channel, the join flow carries weight the UI would otherwise share with an install step: the room link must work on first click, with no account, no lobby, no install interstitial, and permission prompts requested only at the moment they are needed (mic on join, screen only when the user clicks Share).
 
+## 7a. Screen capture on desktop, and the macOS permission chain
+
+Screen sharing uses `navigator.mediaDevices.getDisplayMedia()` — the same standard API Microsoft Teams, Google Meet, and Zoom's web client use. There is no privileged path; a plain web app gets identical capability to Teams here.
+
+On macOS, capture passes through **two** permission layers, and conflating them causes most "screen share is broken" reports:
+
+1. **OS layer (macOS TCC).** System Settings → Privacy & Security → **Screen & System Audio Recording** must list the *browser* and have it enabled. Required since macOS 10.15. The toggle does not take effect until the browser is **fully quit (Cmd+Q) and relaunched** — not just window-closed.
+2. **Browser layer.** Chrome shows its own non-styleable picker: Entire Screen / Window / Chrome Tab. We cannot skin, pre-select, or bypass it, and it requires a user gesture.
+
+The failure mode worth designing for: when layer 1 is missing, the browser may still show its picker, and the user then gets a black or empty capture with no explanation — the OS denied it, the page was never told why. **Detect this** (a track that ends immediately, or video frames that are entirely blank on first capture) and show macOS-specific guidance including the Cmd+Q step, rather than a generic "sharing failed".
+
+**Audio on a shared screen** is platform-split and should not be promised in the UI without checking:
+
+| Platform | Tab audio | Full system audio |
+|---|---|---|
+| Windows / ChromeOS | Yes | Yes (Chrome 74+, sharing entire screen) |
+| macOS | Yes | Only Chrome 141+ on macOS 14.2+ |
+
+Pass `systemAudio: 'include'`, treat it strictly as a hint to the picker, and always confirm whether an audio track actually arrived before telling the user their sound is being shared.
+
 ## 8. Known limitations (state these in the README, not in a support thread)
 
 - **iOS/iPadOS Safari cannot screen share.** `getDisplayMedia` is unimplemented, and installing the PWA to the home screen does **not** change this — an installed PWA on iOS is still Safari's engine with the same gap. iOS users can open the link, talk, and *view* others' screens, but never share their own. The only escape would be a native app, which the no-install-required goal rules out. Detect iOS and hide the Share button rather than letting it fail.
