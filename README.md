@@ -38,14 +38,17 @@ WebSocket upgrades, to port 3000.
 
 Copy `.env.template` to `.env` and uncomment what you need. Every setting is optional.
 
-| Variable                                  | Default                        | Purpose                                                                                                    |
-| ----------------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------- |
-| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` | unset                          | Twilio credentials for TURN relays, which connect calls through strict firewalls. Without them, STUN only. |
-| `STUN_URLS`                               | `stun:stun.l.google.com:19302` | Comma-separated STUN servers.                                                                              |
-| `PORT`                                    | `3000`                         | Port for the web app and signaling server (not used with Docker Compose).                                  |
-| `FORCE_HTTPS`                             | `true` on Heroku, else `false` | Redirect plain-HTTP requests to HTTPS behind a proxy that sets `X-Forwarded-Proto`.                        |
-| `APP_PORT`, `APP_BIND`                    | `3000`, `127.0.0.1`            | Docker Compose: where the app is published on the host.                                                    |
-| `DOMAIN`                                  | `localhost`                    | Docker Compose `https` profile: the public hostname Caddy serves.                                          |
+| Variable                                  | Default                                     | Purpose                                                                                                    |
+| ----------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` | unset                                       | Twilio credentials for TURN relays, which connect calls through strict firewalls. Without them, STUN only. |
+| `STUN_URLS`                               | `stun:stun.l.google.com:19302`              | Comma-separated STUN servers.                                                                              |
+| `PORT`                                    | `3000`                                      | Port for the web app and signaling server (not used with Docker Compose).                                  |
+| `FORCE_HTTPS`                             | `true` on Heroku, else `false`              | Redirect plain-HTTP requests to HTTPS behind a proxy that sets `X-Forwarded-Proto`.                        |
+| `TRUST_PROXY`                             | `0` (`1` on Heroku and with Docker Compose) | How many reverse proxies are in front of the app, so it can find visitors' real IP addresses.              |
+| `ALLOWED_ORIGINS`                         | none                                        | Other origins allowed to open signaling connections, if the web app is served elsewhere.                   |
+| `MAX_CONNECTIONS_PER_IP`                  | `50`                                        | Simultaneous signaling connections allowed from one public IP address.                                     |
+| `APP_PORT`, `APP_BIND`                    | `3000`, `127.0.0.1`                         | Docker Compose: where the app is published on the host.                                                    |
+| `DOMAIN`                                  | `localhost`                                 | Docker Compose `https` profile: the public hostname Caddy serves.                                          |
 
 Most calls connect with STUN alone, but some networks (corporate firewalls, some mobile carriers)
 need a TURN relay. The variable names used by earlier versions (`HEROKU_TWILLIO_SID`,

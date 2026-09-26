@@ -13,6 +13,16 @@ export interface Config {
    * to HTTPS. Browsers only allow camera access on secure origins.
    */
   forceHttps: boolean;
+  /**
+   * How many reverse proxies sit in front of the server. Their
+   * X-Forwarded-For entries are trusted to find the client's IP address;
+   * with 0 the connection's own address is used.
+   */
+  trustProxy: number;
+  /** Extra origins allowed to open signaling connections, besides the site itself. */
+  allowedOrigins: string[];
+  /** Concurrent signaling connections allowed from one IP address. */
+  maxConnectionsPerIp: number;
   /** Credentials for Twilio's TURN relays, or null to use STUN only. */
   twilio: TwilioCredentials | null;
   /** STUN servers handed to browsers when TURN relays are unavailable. */
@@ -26,29 +36,41 @@ export class ConfigError extends Error {
 }
 
 const DEFAULT_PORT = 3000;
+const DEFAULT_MAX_CONNECTIONS_PER_IP = 50;
 const DEFAULT_STUN_URLS = ["stun:stun.l.google.com:19302"];
 const DEFAULT_CLIENT_DIR = fileURLToPath(new URL("../build/client", import.meta.url));
 
 /** Reads the configuration from environment variables, failing fast on bad values. */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+  // Heroku (which sets DYNO) terminates TLS in its router, so redirect by
+  // default there, as earlier versions of Zipcall did, and trust its router.
+  const onHeroku = "DYNO" in env;
   return {
-    port: parsePort(env.PORT),
-    // Heroku (which sets DYNO) terminates TLS in its router, so redirect by
-    // default there, as earlier versions of Zipcall did.
-    forceHttps: parseBoolean("FORCE_HTTPS", env.FORCE_HTTPS) ?? "DYNO" in env,
+    port: parseInteger("PORT", env.PORT, { min: 0, max: 65_535 }) ?? DEFAULT_PORT,
+    forceHttps: parseBoolean("FORCE_HTTPS", env.FORCE_HTTPS) ?? onHeroku,
+    trustProxy: parseTrustProxy(env.TRUST_PROXY) ?? (onHeroku ? 1 : 0),
+    allowedOrigins: parseOrigins(env.ALLOWED_ORIGINS),
+    maxConnectionsPerIp:
+      parseInteger("MAX_CONNECTIONS_PER_IP", env.MAX_CONNECTIONS_PER_IP, { min: 1 }) ??
+      DEFAULT_MAX_CONNECTIONS_PER_IP,
     twilio: parseTwilioCredentials(env),
     stunUrls: parseList(env.STUN_URLS) ?? DEFAULT_STUN_URLS,
     clientDir: DEFAULT_CLIENT_DIR,
   };
 }
 
-function parsePort(value: string | undefined): number {
-  if (value === undefined || value.trim() === "") return DEFAULT_PORT;
-  const port = Number(value);
-  if (!Number.isInteger(port) || port < 0 || port > 65_535) {
-    throw new ConfigError(`PORT must be a number from 0 to 65535, got "${value}".`);
+function parseInteger(
+  name: string,
+  value: string | undefined,
+  { min, max = Number.MAX_SAFE_INTEGER }: { min: number; max?: number },
+): number | undefined {
+  if (value === undefined || value.trim() === "") return undefined;
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < min || number > max) {
+    const range = max === Number.MAX_SAFE_INTEGER ? `at least ${min}` : `from ${min} to ${max}`;
+    throw new ConfigError(`${name} must be a whole number ${range}, got "${value}".`);
   }
-  return port;
+  return number;
 }
 
 function parseBoolean(name: string, value: string | undefined): boolean | undefined {
@@ -57,6 +79,31 @@ function parseBoolean(name: string, value: string | undefined): boolean | undefi
   if (["1", "true", "yes", "on"].includes(normalized)) return true;
   if (["0", "false", "no", "off"].includes(normalized)) return false;
   throw new ConfigError(`${name} must be true or false, got "${value}".`);
+}
+
+/** A number of proxy hops; "true" and "false" are accepted as 1 and 0. */
+function parseTrustProxy(value: string | undefined): number | undefined {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === "true") return 1;
+  if (normalized === "false") return 0;
+  return parseInteger("TRUST_PROXY", value, { min: 0, max: 10 });
+}
+
+function parseOrigins(value: string | undefined): string[] {
+  return (parseList(value) ?? []).map((origin) => {
+    let url: URL;
+    try {
+      url = new URL(origin);
+    } catch {
+      throw new ConfigError(`ALLOWED_ORIGINS entries must be URLs, got "${origin}".`);
+    }
+    if (url.origin === "null" || url.origin !== origin.replace(/\/$/, "")) {
+      throw new ConfigError(
+        `ALLOWED_ORIGINS entries must be origins like https://example.com, got "${origin}".`,
+      );
+    }
+    return url.origin;
+  });
 }
 
 function parseList(value: string | undefined): string[] | undefined {

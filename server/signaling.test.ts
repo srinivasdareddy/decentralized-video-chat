@@ -9,6 +9,7 @@ import type {
 } from "../shared/protocol.ts";
 import { silentLogger } from "./logger.ts";
 import { createZipcallServer, type ZipcallServer } from "./server.ts";
+import type { SignalingLimits } from "./signaling.ts";
 
 type Client = Socket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -18,6 +19,7 @@ const ANSWER = { type: "answer", sdp: "v=0 answer" } as const;
 const CANDIDATE = { candidate: "candidate:1 1 udp 1 10.0.0.1 9 typ host", sdpMid: "0" };
 
 let server: ZipcallServer | undefined;
+let serverUrl = "";
 const clients: Client[] = [];
 
 afterEach(async () => {
@@ -26,27 +28,67 @@ afterEach(async () => {
   server = undefined;
 });
 
+interface ServerOptions {
+  getIceServers?: () => Promise<IceServer[]>;
+  limits?: Partial<SignalingLimits>;
+  trustProxy?: number;
+  allowedOrigins?: string[];
+}
+
+/** Starts a server and returns a function that connects a client to it. */
 async function startServer(
-  getIceServers: () => Promise<IceServer[]> = () => Promise.resolve(ICE_SERVERS),
-): Promise<() => Promise<Client>> {
+  options: ServerOptions = {},
+): Promise<(headers?: Record<string, string>) => Promise<Client>> {
   server = createZipcallServer(
-    { port: 0, forceHttps: false, twilio: null, stunUrls: [], clientDir: "/nonexistent" },
-    { logger: silentLogger, getIceServers },
+    {
+      port: 0,
+      forceHttps: false,
+      trustProxy: options.trustProxy ?? 0,
+      allowedOrigins: options.allowedOrigins ?? [],
+      maxConnectionsPerIp: 50,
+      twilio: null,
+      stunUrls: [],
+      clientDir: "/nonexistent",
+    },
+    {
+      logger: silentLogger,
+      getIceServers: options.getIceServers ?? (() => Promise.resolve(ICE_SERVERS)),
+      limits: options.limits,
+    },
   );
   const httpServer = server.httpServer;
   await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
   const { port } = httpServer.address() as AddressInfo;
+  serverUrl = `http://127.0.0.1:${port}`;
 
-  return async () => {
-    const client: Client = connect(`http://127.0.0.1:${port}`, {
-      transports: ["websocket"],
-      forceNew: true,
-      reconnection: false,
+  return async (headers) => {
+    const client = open(headers);
+    await new Promise<void>((resolve, reject) => {
+      client.once("connect", resolve);
+      client.once("connect_error", reject);
     });
-    clients.push(client);
-    await new Promise<void>((resolve) => client.once("connect", resolve));
     return client;
   };
+}
+
+function open(headers: Record<string, string> = {}): Client {
+  const client: Client = connect(serverUrl, {
+    transports: ["websocket"],
+    forceNew: true,
+    reconnection: false,
+    extraHeaders: headers,
+  });
+  clients.push(client);
+  return client;
+}
+
+/** Resolves with the error when the server refuses the connection. */
+function refusedConnection(headers: Record<string, string>): Promise<Error> {
+  return new Promise((resolve, reject) => {
+    const client = open(headers);
+    client.once("connect", () => reject(new Error("the connection was accepted")));
+    client.once("connect_error", resolve);
+  });
 }
 
 let tabCounter = 0;
@@ -227,9 +269,10 @@ describe("signaling", () => {
 
   it("gives the slot back if joining fails unexpectedly", async () => {
     let fail = true;
-    const newClient = await startServer(() =>
-      fail ? Promise.reject(new Error("boom")) : Promise.resolve(ICE_SERVERS),
-    );
+    const newClient = await startServer({
+      getIceServers: () =>
+        fail ? Promise.reject(new Error("boom")) : Promise.resolve(ICE_SERVERS),
+    });
     const alice = await newClient();
     const bob = await newClient();
     const carol = await newClient();
@@ -238,5 +281,61 @@ describe("signaling", () => {
     fail = false;
     expect(await join(bob, "room")).toMatchObject({ ok: true });
     expect(await join(carol, "room")).toMatchObject({ ok: true });
+  });
+});
+
+describe("abuse limits", () => {
+  const publicIp = (ip: string) => ({ "x-forwarded-for": ip });
+
+  it("refuses connections from other websites", async () => {
+    const newClient = await startServer({ allowedOrigins: ["https://app.example"] });
+    await expect(refusedConnection({ origin: "https://evil.example" })).resolves.toBeInstanceOf(
+      Error,
+    );
+    await expect(newClient({ origin: serverUrl })).resolves.toBeDefined();
+    await expect(newClient({ origin: "https://app.example" })).resolves.toBeDefined();
+  });
+
+  it("caps connections per public IP address", async () => {
+    const newClient = await startServer({ trustProxy: 1, limits: { connectionsPerIp: 2 } });
+    const first = await newClient(publicIp("203.0.113.5"));
+    await newClient(publicIp("203.0.113.5"));
+    const refused = await refusedConnection(publicIp("203.0.113.5"));
+    expect(refused.message).toBe("too-many-connections");
+    // Other addresses are unaffected, and closing a connection frees a slot.
+    await newClient(publicIp("198.51.100.20"));
+    first.disconnect();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await newClient(publicIp("203.0.113.5"));
+  });
+
+  it("doesn't limit local addresses, which may be a proxy for everyone", async () => {
+    const newClient = await startServer({ limits: { connectionsPerIp: 1 } });
+    await newClient();
+    await newClient();
+    await newClient();
+  });
+
+  it("limits how fast one IP address can join rooms", async () => {
+    const newClient = await startServer({ trustProxy: 1, limits: { joinsPerMinute: 2 } });
+    const clients = await Promise.all([1, 2, 3].map(() => newClient(publicIp("203.0.113.6"))));
+    const [a, b, c] = clients as [Client, Client, Client];
+    expect(await join(a, "one")).toMatchObject({ ok: true });
+    expect(await join(b, "two")).toMatchObject({ ok: true });
+    expect(await join(c, "three")).toEqual({ ok: false, error: "rate-limited" });
+  });
+
+  it("drops relayed messages beyond a connection's allowance", async () => {
+    const newClient = await startServer({ limits: { relayBurst: 3, relaysPerSecond: 0.01 } });
+    const alice = await newClient();
+    const bob = await newClient();
+    await join(alice, "room");
+    await join(bob, "room");
+
+    let received = 0;
+    bob.on("candidate", () => received++);
+    for (let i = 0; i < 6; i++) alice.emit("candidate", CANDIDATE);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(received).toBe(3);
   });
 });

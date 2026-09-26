@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures.ts";
 
 test("the landing page leads to a new call", async ({ page }) => {
   await page.goto("/");
@@ -11,7 +11,7 @@ test("the landing page leads to a new call", async ({ page }) => {
   await expect(page).toHaveURL(/\/newcall$/);
 
   const name = page.getByRole("textbox", { name: "Call name" });
-  await expect(name).toHaveValue(/^[a-z]+-[a-z]+$/);
+  await expect(name).toHaveValue(/^[a-z]+-[a-z]+-[a-z0-9]{4}$/);
   await name.fill("Team Standup");
   await page.getByRole("button", { name: "Start call" }).click();
   await expect(page).toHaveURL(/\/join\/team%20standup$/);

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import http, { type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -8,7 +9,7 @@ import { createApp } from "./app.ts";
 import { silentLogger } from "./logger.ts";
 
 const PAGES: Record<string, string> = {
-  "index.html": "landing page",
+  "index.html": "landing page<script>window.landing = true;</script>",
   "newcall/index.html": "new call page",
   "notsupported/index.html": "not supported page",
   "notsupportedios/index.html": "not supported on iOS page",
@@ -35,10 +36,11 @@ afterEach(async () => {
   server = undefined;
 });
 
-async function start(options: { forceHttps?: boolean; dir?: string } = {}) {
+async function start(options: { forceHttps?: boolean; dir?: string; trustProxy?: number } = {}) {
   const app = createApp({
     clientDir: options.dir ?? clientDir,
     forceHttps: options.forceHttps ?? false,
+    trustProxy: options.trustProxy ?? 0,
     logger: silentLogger,
   });
   const listening = app.listen(0, "127.0.0.1");
@@ -58,7 +60,7 @@ describe("web app", () => {
   });
 
   it.each([
-    ["/", "landing page"],
+    ["/", "landing page<script>window.landing = true;</script>"],
     ["/newcall", "new call page"],
     ["/notsupported", "not supported page"],
     ["/notsupportedios", "not supported on iOS page"],
@@ -70,6 +72,82 @@ describe("web app", () => {
     expect(await response.text()).toBe(body);
     expect(response.headers.get("cache-control")).toBe("no-cache");
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+  });
+
+  it("sends a Content-Security-Policy allowing each page's own inline scripts", async () => {
+    const get = await start();
+    const landing = await get("/");
+    const policy = landing.headers.get("content-security-policy") ?? "";
+    expect(policy).toContain(
+      `'sha256-${createHash("sha256").update("window.landing = true;").digest("base64")}'`,
+    );
+    expect(policy).toContain("object-src 'none'");
+    // Pages without inline scripts get no hashes at all.
+    const newCall = await get("/newcall");
+    expect(newCall.headers.get("content-security-policy")).toContain("script-src 'self';");
+  });
+
+  it("keeps call links and help pages out of search engines", async () => {
+    const get = await start();
+    expect((await get("/join/room")).headers.get("x-robots-tag")).toBe("noindex, nofollow");
+    expect((await get("/notsupported")).headers.get("x-robots-tag")).toBe("noindex, nofollow");
+    expect((await get("/")).headers.get("x-robots-tag")).toBeNull();
+    expect((await get("/newcall")).headers.get("x-robots-tag")).toBeNull();
+  });
+
+  it("isolates the page from other sites' windows", async () => {
+    const get = await start();
+    const response = await get("/");
+    expect(response.headers.get("cross-origin-opener-policy")).toBe("same-origin");
+    expect(response.headers.get("cross-origin-resource-policy")).toBe("same-origin");
+  });
+
+  it("sends HSTS only for HTTPS requests to real hosts, seen through a trusted proxy", async () => {
+    const get = await start({ trustProxy: 1 });
+    const { port } = server?.address() as AddressInfo;
+    const hstsFor = (host: string, proto: string) =>
+      new Promise<string | undefined>((resolve, reject) => {
+        http
+          .get(
+            {
+              port,
+              host: "127.0.0.1",
+              path: "/",
+              headers: { host, "x-forwarded-proto": proto },
+            },
+            (response) => {
+              response.resume();
+              resolve(response.headers["strict-transport-security"]);
+            },
+          )
+          .on("error", reject);
+      });
+    expect(await hstsFor("zipcall.example", "https")).toBe("max-age=31536000");
+    expect(await hstsFor("zipcall.example", "http")).toBeUndefined();
+    expect(await hstsFor("localhost:3000", "https")).toBeUndefined();
+    expect((await get("/")).headers.get("strict-transport-security")).toBeNull();
+  });
+
+  it("does not trust X-Forwarded-Proto without a trusted proxy", async () => {
+    await start({ trustProxy: 0 });
+    const { port } = server?.address() as AddressInfo;
+    const hsts = await new Promise<string | undefined>((resolve, reject) => {
+      http
+        .get(
+          {
+            port,
+            host: "127.0.0.1",
+            path: "/",
+            headers: { host: "zipcall.example", "x-forwarded-proto": "https" },
+          },
+          (response) => {
+            response.resume();
+            resolve(response.headers["strict-transport-security"]);
+          },
+        )
+        .on("error", reject);
+    });
+    expect(hsts).toBeUndefined();
   });
 
   it("answers unknown pages with the app shell and a 404", async () => {

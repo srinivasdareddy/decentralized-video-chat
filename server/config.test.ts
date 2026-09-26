@@ -55,6 +55,30 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ FORCE_HTTPS: "maybe" })).toThrow(ConfigError);
   });
 
+  it("trusts proxies only when told how many there are", () => {
+    expect(loadConfig({}).trustProxy).toBe(0);
+    expect(loadConfig({ DYNO: "web.1" }).trustProxy).toBe(1);
+    expect(loadConfig({ TRUST_PROXY: "2" }).trustProxy).toBe(2);
+    expect(loadConfig({ TRUST_PROXY: "true" }).trustProxy).toBe(1);
+    expect(loadConfig({ TRUST_PROXY: "false" }).trustProxy).toBe(0);
+    expect(() => loadConfig({ TRUST_PROXY: "all" })).toThrow(ConfigError);
+  });
+
+  it("accepts extra signaling origins", () => {
+    expect(loadConfig({}).allowedOrigins).toEqual([]);
+    expect(
+      loadConfig({ ALLOWED_ORIGINS: "https://a.example, http://localhost:5173/" }).allowedOrigins,
+    ).toEqual(["https://a.example", "http://localhost:5173"]);
+    expect(() => loadConfig({ ALLOWED_ORIGINS: "a.example" })).toThrow(ConfigError);
+    expect(() => loadConfig({ ALLOWED_ORIGINS: "https://a.example/path" })).toThrow(ConfigError);
+  });
+
+  it("limits connections per IP", () => {
+    expect(loadConfig({}).maxConnectionsPerIp).toBe(50);
+    expect(loadConfig({ MAX_CONNECTIONS_PER_IP: "200" }).maxConnectionsPerIp).toBe(200);
+    expect(() => loadConfig({ MAX_CONNECTIONS_PER_IP: "0" })).toThrow(ConfigError);
+  });
+
   it("parses a comma-separated STUN list", () => {
     expect(loadConfig({ STUN_URLS: "stun:a:3478, stun:b:3478" }).stunUrls).toEqual([
       "stun:a:3478",

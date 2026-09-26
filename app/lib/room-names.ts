@@ -78,11 +78,23 @@ const NOUNS = [
   "zebra",
 ];
 
-function pick<T>(items: readonly T[]): T {
-  return items[Math.floor(Math.random() * items.length)] as T;
+/** Letters and digits that can't be mistaken for each other when read aloud or typed. */
+const SUFFIX_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
+
+function randomIndex(length: number): number {
+  return crypto.getRandomValues(new Uint32Array(1))[0]! % length;
 }
 
-/** A friendly, easy-to-read call name such as "happy-panda". */
+function pick<T>(items: readonly T[]): T {
+  return items[randomIndex(items.length)] as T;
+}
+
+/**
+ * A friendly call name such as "happy-panda-7k3q". The random suffix makes
+ * names practically impossible to guess (about a billion combinations), so
+ * strangers can't wander into a call.
+ */
 export function randomRoomName(): string {
-  return `${pick(ADJECTIVES)}-${pick(NOUNS)}`;
+  const suffix = Array.from({ length: 4 }, () => pick([...SUFFIX_ALPHABET])).join("");
+  return `${pick(ADJECTIVES)}-${pick(NOUNS)}-${suffix}`;
 }

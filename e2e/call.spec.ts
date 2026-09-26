@@ -1,4 +1,5 @@
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "./fixtures.ts";
 
 let roomCounter = 0;
 /** A room name no other test (or earlier run) uses. */
@@ -6,10 +7,8 @@ function uniqueRoom(): string {
   return `e2e-${process.pid}-${Date.now()}-${++roomCounter}`;
 }
 
-/** Each participant gets its own browser context, like a separate person. */
-async function join(browser: Browser, room: string): Promise<Page> {
-  const context = await browser.newContext();
-  const page = await context.newPage();
+async function join(newPerson: () => Promise<Page>, room: string): Promise<Page> {
+  const page = await newPerson();
   await page.goto(`/join/${room}`);
   return page;
 }
@@ -24,13 +23,13 @@ async function expectConnected(page: Page): Promise<void> {
     .toBeGreaterThan(0);
 }
 
-test("two people can join a call, see each other, and chat", async ({ browser }) => {
+test("two people can join a call, see each other, and chat", async ({ newPerson }) => {
   const room = uniqueRoom();
-  const alice = await join(browser, room);
+  const alice = await join(newPerson, room);
   await expect(alice.getByRole("heading", { name: "Waiting for someone to join" })).toBeVisible();
   await expect(alice.locator(".invite-url")).toHaveText(new RegExp(`/join/${room}$`));
 
-  const bob = await join(browser, room);
+  const bob = await join(newPerson, room);
   await expectConnected(alice);
   await expectConnected(bob);
 
@@ -50,10 +49,10 @@ test("two people can join a call, see each other, and chat", async ({ browser })
   expect(await bob.evaluate(() => "pwned" in window)).toBe(false);
 });
 
-test("the other person sees when you mute", async ({ browser }) => {
+test("the other person sees when you mute", async ({ newPerson }) => {
   const room = uniqueRoom();
-  const alice = await join(browser, room);
-  const bob = await join(browser, room);
+  const alice = await join(newPerson, room);
+  const bob = await join(newPerson, room);
   await expectConnected(alice);
   await expectConnected(bob);
 
@@ -65,22 +64,22 @@ test("the other person sees when you mute", async ({ browser }) => {
   await expect(bob.getByText("Their camera is off")).toBeVisible();
 });
 
-test("a call holds two people", async ({ browser }) => {
+test("a call holds two people", async ({ newPerson }) => {
   const room = uniqueRoom();
-  const alice = await join(browser, room);
-  const bob = await join(browser, room);
+  const alice = await join(newPerson, room);
+  const bob = await join(newPerson, room);
   await expectConnected(alice);
 
-  const carol = await join(browser, room);
+  const carol = await join(newPerson, room);
   await expect(carol.getByRole("heading", { name: "This call is full" })).toBeVisible();
   // The call carries on.
   await expect(bob.locator(".call-status")).toHaveText("Connected");
 });
 
-test("when someone leaves, the other waits and can talk to someone new", async ({ browser }) => {
+test("when someone leaves, the other waits and can talk to someone new", async ({ newPerson }) => {
   const room = uniqueRoom();
-  const alice = await join(browser, room);
-  const bob = await join(browser, room);
+  const alice = await join(newPerson, room);
+  const bob = await join(newPerson, room);
   await expectConnected(alice);
 
   await bob.getByRole("button", { name: "Leave call" }).click();
@@ -89,7 +88,7 @@ test("when someone leaves, the other waits and can talk to someone new", async (
   await expect(alice.getByRole("heading", { name: "Waiting for someone to join" })).toBeVisible();
 
   // No reload needed: the same page connects to the next person.
-  const carol = await join(browser, room);
+  const carol = await join(newPerson, room);
   await expectConnected(alice);
   await expectConnected(carol);
 });

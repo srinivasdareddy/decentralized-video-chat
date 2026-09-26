@@ -49,7 +49,13 @@ export interface JoinRequest {
   clientId: string;
 }
 
-export type JoinError = "invalid-request" | "already-joined" | "room-full" | "server-error";
+export type JoinError =
+  | "invalid-request"
+  | "already-joined"
+  | "room-full"
+  /** Too many joins from this network recently; try again shortly. */
+  | "rate-limited"
+  | "server-error";
 
 export type JoinResponse = { ok: true; iceServers: IceServer[] } | { ok: false; error: JoinError };
 

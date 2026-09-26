@@ -8,10 +8,14 @@ import {
   type JoinResponse,
   type ServerToClientEvents,
 } from "../shared/protocol.ts";
+import { clientIp, isLocalAddress } from "./client-ip.ts";
 import type { IceServerProvider } from "./ice-servers.ts";
 import type { Logger } from "./logger.ts";
+import { RateLimiter } from "./rate-limit.ts";
 
 interface SocketData {
+  /** The client's IP address, used for per-IP limits. */
+  ip: string;
   /** The room this connection joined; a connection can join only one. */
   room?: string;
   clientId?: string;
@@ -32,10 +36,33 @@ type SignalingSocket = Socket<
   SocketData
 >;
 
+export interface SignalingLimits {
+  /** Concurrent connections from one public IP address. */
+  connectionsPerIp: number;
+  /** Joins per minute from one public IP address (bursts up to this many). */
+  joinsPerMinute: number;
+  /** Offers, answers, and candidates one connection may send at once… */
+  relayBurst: number;
+  /** …and per second after that. */
+  relaysPerSecond: number;
+}
+
 export interface SignalingOptions {
   getIceServers: IceServerProvider;
   logger: Logger;
+  /** Reverse proxies in front of the server (see Config.trustProxy). */
+  trustProxy: number;
+  limits: SignalingLimits;
 }
+
+export const DEFAULT_LIMITS: SignalingLimits = {
+  connectionsPerIp: 50,
+  // Generous for real use, but makes guessing room names slow.
+  joinsPerMinute: 30,
+  // Setting up a call takes an offer or answer and a few dozen candidates.
+  relayBurst: 200,
+  relaysPerSecond: 50,
+};
 
 /**
  * Pairs up the two browsers in a room and relays their WebRTC offer, answer,
@@ -46,12 +73,58 @@ export interface SignalingOptions {
  */
 export function registerSignaling(
   io: SignalingServer,
-  { getIceServers, logger }: SignalingOptions,
-): void {
+  { getIceServers, logger, trustProxy, limits }: SignalingOptions,
+): () => void {
+  const connectionsByIp = new Map<string, number>();
+  const joinLimiter = new RateLimiter({
+    capacity: limits.joinsPerMinute,
+    perSecond: limits.joinsPerMinute / 60,
+  });
+  const relayLimiter = new RateLimiter({
+    capacity: limits.relayBurst,
+    perSecond: limits.relaysPerSecond,
+  });
+  const pruneTimer = setInterval(() => joinLimiter.prune(), 60_000);
+  pruneTimer.unref();
+
+  // Limits apply per public IP. Local and private addresses are exempt:
+  // they're either local users or a proxy whose forwarded addresses aren't
+  // trusted, and limiting them would lump every visitor together.
+  io.use((socket, next) => {
+    const ip = clientIp(socket.request, trustProxy);
+    socket.data.ip = ip;
+    if (isLocalAddress(ip)) return next();
+    const connections = connectionsByIp.get(ip) ?? 0;
+    if (connections >= limits.connectionsPerIp) {
+      logger.warn(`Refused a connection from ${ip}: too many open connections`);
+      return next(new Error("too-many-connections"));
+    }
+    connectionsByIp.set(ip, connections + 1);
+    next();
+  });
+
   io.on("connection", (socket) => {
+    const { ip } = socket.data;
+    const limited = !isLocalAddress(ip);
+    let warnedAboutRelays = false;
+
+    /** Whether this connection may relay another message right now. */
+    const mayRelay = (): boolean => {
+      if (relayLimiter.take(socket.id)) return true;
+      if (!warnedAboutRelays) {
+        warnedAboutRelays = true;
+        logger.warn(`${socket.data.room ?? "no room"}: dropping relayed messages from ${ip}`);
+      }
+      return false;
+    };
+
     socket.on("join", async (request: unknown, ack: unknown) => {
       if (typeof ack !== "function") return;
       const reply = ack as (response: JoinResponse) => void;
+      if (limited && !joinLimiter.take(ip)) {
+        reply({ ok: false, error: "rate-limited" });
+        return;
+      }
       try {
         await handleJoin(io, socket, request, reply, getIceServers, logger);
       } catch (error) {
@@ -68,32 +141,40 @@ export function registerSignaling(
 
     socket.on("offer", (description: unknown) => {
       const room = socket.data.room;
-      if (room !== undefined && isSessionDescription(description, "offer")) {
+      if (room !== undefined && isSessionDescription(description, "offer") && mayRelay()) {
         socket.to(room).emit("offer", description);
       }
     });
 
     socket.on("answer", (description: unknown) => {
       const room = socket.data.room;
-      if (room !== undefined && isSessionDescription(description, "answer")) {
+      if (room !== undefined && isSessionDescription(description, "answer") && mayRelay()) {
         socket.to(room).emit("answer", description);
       }
     });
 
     socket.on("candidate", (candidate: unknown) => {
       const room = socket.data.room;
-      if (room !== undefined && isIceCandidate(candidate)) {
+      if (room !== undefined && isIceCandidate(candidate) && mayRelay()) {
         socket.to(room).emit("candidate", candidate);
       }
     });
 
     socket.on("disconnect", (reason) => {
+      relayLimiter.forget(socket.id);
+      if (limited) {
+        const remaining = (connectionsByIp.get(ip) ?? 1) - 1;
+        if (remaining > 0) connectionsByIp.set(ip, remaining);
+        else connectionsByIp.delete(ip);
+      }
       const { room, replaced } = socket.data;
       if (room === undefined || replaced === true) return;
       logger.info(`${room}: peer left (${reason})`);
       socket.to(room).emit("peer-left");
     });
   });
+
+  return () => clearInterval(pruneTimer);
 }
 
 async function handleJoin(

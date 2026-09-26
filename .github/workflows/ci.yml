@@ -31,6 +31,19 @@ jobs:
       - run: npm run check
       - run: npm run build
 
+  audit:
+    name: Audit production dependencies
+    # Pull requests from this repository's own branches already ran on push.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # Fails on known high or critical vulnerabilities in what ships.
+      - run: npm audit --omit=dev --audit-level=high
+
   e2e:
     name: End-to-end tests
     # Pull requests from this repository's own branches already ran on push.

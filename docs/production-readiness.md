@@ -17,18 +17,20 @@ Each phase is one commit with its own tests, and this checklist is updated as ph
 - [x] CI runs on pushes to every branch (and manually), not only `master` and pull requests, so
       each phase is verified by GitHub Actions, including the Docker image build.
 
-## Phase 1: Security hardening
+## Phase 1: Security hardening (done)
 
-- [ ] Content Security Policy for every page, using hashes of the pre-rendered inline scripts.
-- [ ] HSTS whenever the site is known to be served over HTTPS.
-- [ ] Call links kept out of search engines (`X-Robots-Tag` and `robots.txt`).
-- [ ] Signaling connections only accepted from the site's own origin.
-- [ ] Rate limits: connections per IP, joins, and relayed messages per connection.
-- [ ] Client IPs taken from the proxy only when configured to trust it.
-- [ ] `npm audit` for production dependencies in CI.
-
-Acceptance: unit tests for each measure; all browser tests pass with the policy enforced and no
-policy violations reported.
+- [x] Content Security Policy for every page, using hashes of the pre-rendered inline scripts. No
+      inline styles, plugins, or framing by other sites. Browser tests fail on any violation.
+- [x] HSTS whenever the site is known to be served over HTTPS (never on localhost).
+- [x] Call links kept out of search engines (`X-Robots-Tag` and `robots.txt`).
+- [x] Signaling connections only accepted from the site's own origin (plus `ALLOWED_ORIGINS`).
+- [x] Rate limits: connections per IP, joins per IP (which also slows room-name guessing), and
+      relayed messages per connection. Local and private addresses are exempt, so a misconfigured
+      proxy can't lump every visitor into one limit.
+- [x] Client IPs taken from `X-Forwarded-For` only through `TRUST_PROXY` trusted hops.
+- [x] Suggested call names carry a random suffix (about 1.3 billion combinations), so strangers
+      can't guess their way into a waiting room.
+- [x] `npm audit` for production dependencies in CI.
 
 ## Phase 2: Observability and operations
 

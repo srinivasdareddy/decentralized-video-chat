@@ -21,6 +21,9 @@ services:
         required: false
     environment:
       PORT: "3000"
+      # Caddy (the https profile) is one proxy in front of the app; trusting
+      # it gives the app each visitor's real IP address for rate limiting.
+      TRUST_PROXY: ${TRUST_PROXY:-1}
     ports:
       # Browsers only allow camera access over HTTPS or on localhost, so by
       # default the app is reachable from this machine only. Use the https

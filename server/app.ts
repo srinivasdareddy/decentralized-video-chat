@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import path from "node:path";
 import express, {
   type ErrorRequestHandler,
@@ -8,19 +7,25 @@ import express, {
   type Response,
 } from "express";
 import type { Logger } from "./logger.ts";
+import { loadPage, type Page } from "./pages.ts";
+import { contentSecurityPolicy, securityHeaders } from "./security.ts";
 
 export interface AppOptions {
   clientDir: string;
   forceHttps: boolean;
+  trustProxy: number;
   logger: Logger;
 }
 
-/** Pages that `react-router build` pre-renders to static HTML. */
-const PRERENDERED_PAGES: Record<string, string> = {
-  "/": "index.html",
-  "/newcall": "newcall/index.html",
-  "/notsupported": "notsupported/index.html",
-  "/notsupportedios": "notsupportedios/index.html",
+/**
+ * Pages that `react-router build` pre-renders to static HTML. Only the
+ * landing and new call pages belong in search results.
+ */
+const PAGES: Record<string, { file: string; indexable: boolean }> = {
+  "/": { file: "index.html", indexable: true },
+  "/newcall": { file: "newcall/index.html", indexable: true },
+  "/notsupported": { file: "notsupported/index.html", indexable: false },
+  "/notsupportedios": { file: "notsupportedios/index.html", indexable: false },
 };
 
 /** Shell that boots the client-side router for every other route. */
@@ -29,8 +34,14 @@ const SPA_FALLBACK = "__spa-fallback.html";
 /** Everything under assets/ has a content hash in its file name. */
 const IMMUTABLE_ASSETS = `${path.sep}assets${path.sep}`;
 
-export function createApp({ clientDir, forceHttps, logger }: AppOptions): express.Express {
-  if (!fs.existsSync(path.join(clientDir, SPA_FALLBACK))) {
+export function createApp({
+  clientDir,
+  forceHttps,
+  trustProxy,
+  logger,
+}: AppOptions): express.Express {
+  const fallback = loadPage(path.join(clientDir, SPA_FALLBACK));
+  if (fallback === null) {
     logger.warn(
       `The web client has not been built (${clientDir} is missing). Run "npm run build", or use "npm run dev" during development.`,
     );
@@ -38,6 +49,8 @@ export function createApp({ clientDir, forceHttps, logger }: AppOptions): expres
 
   const app = express();
   app.disable("x-powered-by");
+  // Lets req.ip and req.secure see through that many reverse proxies.
+  app.set("trust proxy", trustProxy);
   app.use(securityHeaders);
 
   // Before the HTTPS redirect, so container health checks over plain HTTP pass.
@@ -68,39 +81,39 @@ export function createApp({ clientDir, forceHttps, logger }: AppOptions): expres
     }),
   );
 
-  for (const [route, file] of Object.entries(PRERENDERED_PAGES)) {
-    app.get(route, sendPage(clientDir, file));
+  for (const [route, { file, indexable }] of Object.entries(PAGES)) {
+    app.get(route, sendPage(loadPage(path.join(clientDir, file)), { indexable }));
   }
-  app.get("/join/:room", sendPage(clientDir, SPA_FALLBACK));
+  app.get("/join/:room", sendPage(fallback, { indexable: false }));
   // Unknown pages still get the app shell so the client can render its
   // "not found" page, but with the right status code.
-  app.use(sendPage(clientDir, SPA_FALLBACK, 404));
+  app.use(sendPage(fallback, { indexable: false, status: 404 }));
   app.use(handleError(logger));
 
   return app;
 }
 
-function sendPage(clientDir: string, file: string, status = 200): RequestHandler {
+function sendPage(
+  page: Page | null,
+  { indexable, status = 200 }: { indexable: boolean; status?: number },
+): RequestHandler {
   return (req, res, next) => {
     if (req.method !== "GET" && req.method !== "HEAD") return next();
-    res
-      .status(status)
-      .sendFile(
-        path.join(clientDir, file),
-        { headers: { "Cache-Control": "no-cache" } },
-        (error) => {
-          if (error) next(error);
-        },
-      );
+    if (page === null) {
+      res.status(503).type("text").send('The web client has not been built. Run "npm run build".');
+      return;
+    }
+    res.status(status).set({
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-cache",
+      "Content-Security-Policy": contentSecurityPolicy({
+        scriptHashes: page.scriptHashes,
+        host: req.get("host"),
+      }),
+    });
+    if (!indexable) res.set("X-Robots-Tag", "noindex, nofollow");
+    res.send(page.html);
   };
-}
-
-function securityHeaders(_req: Request, res: Response, next: NextFunction): void {
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("X-Frame-Options", "SAMEORIGIN");
-  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  res.setHeader("Permissions-Policy", "camera=(self), microphone=(self), display-capture=(self)");
-  next();
 }
 
 function redirectToHttps(req: Request, res: Response, next: NextFunction): void {
@@ -129,15 +142,7 @@ function removeTrailingSlash(req: Request, res: Response, next: NextFunction): v
 function handleError(logger: Logger): ErrorRequestHandler {
   return (error: unknown, _req, res, next) => {
     if (res.headersSent) return next(error);
-    if (isMissingFile(error)) {
-      res.status(503).type("text").send('The web client has not been built. Run "npm run build".');
-      return;
-    }
     logger.error("Unhandled request error", error);
     res.status(500).type("text").send("Something went wrong.");
   };
-}
-
-function isMissingFile(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
