@@ -1,70 +1,108 @@
-# Zipcall - Decentralized Video Chat
+# Zipcall
 
-[![Author](https://img.shields.io/badge/Author-ianramzy-brightgreen.svg)](https://ianramzy.com)
-![License: CC-NC](https://img.shields.io/badge/License-CCNC-blue.svg)
-[![Donate](https://img.shields.io/badge/Donate-PayPal-brightgreen.svg)](https://paypal.me/ianramzy)
-[![Repo Link](https://img.shields.io/badge/Repo-Link-black.svg)](https://github.com/ianramzy/decentralized-video-chat)
-[![code style: prettier](https://img.shields.io/badge/code_style-prettier-ff69b4.svg?)](https://github.com/prettier/prettier)
-[![Join the chat at https://gitter.im/zipcall](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/zipcall)
+Free, peer-to-peer video calls in the browser. Pick a name, share the link, and start talking. No
+downloads, no accounts.
 
-# https://zipcall.io
+![The Zipcall call screen, with the other person's video, a self-view, the control bar, and chat](images/call.png)
 
-Decentralized video chat platform powered by WebRTC using Twilio STUN/TURN infrastructure.
-Zipcall provides video quality and latency simply not available with traditional
-technology.
+- **Peer-to-peer:** audio, video, and chat go directly between browsers over WebRTC whenever the
+  network allows.
+- **Everything a call needs:** screen sharing, chat with clickable links, live captions, picture in
+  picture, and microphone and camera controls.
+- **Resilient:** calls recover from network drops without reloading the page, and a replaced
+  camera or headset is picked up automatically.
+- **Private by default:** each call has its own link for two people, and nothing is stored.
 
-![screenshot](images/readmecall.png "Video Calling")
+## Run it with Docker Compose
 
-## Features
+You need Docker with Compose v2.24 or newer.
 
-<img align="right" width="400" height="auto" src="images/preview.gif">
-
-- Screen sharing
-- Picture in picture
-- Live captions
-- Text chat
-- Auto-scaling video quality
-- No download required, entirely browser based
-- Direct peer to peer connection ensures lowest latency
-- Single use disposable chat rooms
-
-## Quick start
-
-- You will need to have Node.js installed, this project has been tested with Node version 10.X and 12.X
-- Clone this repo
-
-```
-git clone https://github.com/ianramzy/decentralized-video-chat
+```sh
+git clone https://github.com/srinivasdareddy/decentralized-video-chat
 cd decentralized-video-chat
+docker compose up -d
 ```
 
-#### Set up credentials
+Open <http://localhost:3000>. To call another device you need HTTPS, because browsers only allow
+camera access on secure pages. Point a domain at your server, open ports 80 and 443, and start the
+bundled [Caddy](https://caddyserver.com) proxy, which gets a certificate automatically:
 
-- Rename .env.template to .env
-- Sign up for free twilio account https://www.twilio.com/login
-- Get your Account SID and Auth Token from the Twillio console
-- Fill in your credentials in the .env file
-
-#### Install dependencies
-
+```sh
+DOMAIN=call.example.com docker compose --profile https up -d
 ```
+
+Behind your own reverse proxy instead? Leave the profile off and forward traffic, including
+WebSocket upgrades, to port 3000.
+
+## Configuration
+
+Copy `.env.template` to `.env` and uncomment what you need. Every setting is optional.
+
+| Variable                                  | Default                        | Purpose                                                                                                    |
+| ----------------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` | unset                          | Twilio credentials for TURN relays, which connect calls through strict firewalls. Without them, STUN only. |
+| `STUN_URLS`                               | `stun:stun.l.google.com:19302` | Comma-separated STUN servers.                                                                              |
+| `PORT`                                    | `3000`                         | Port for the web app and signaling server (not used with Docker Compose).                                  |
+| `FORCE_HTTPS`                             | `true` on Heroku, else `false` | Redirect plain-HTTP requests to HTTPS behind a proxy that sets `X-Forwarded-Proto`.                        |
+| `APP_PORT`, `APP_BIND`                    | `3000`, `127.0.0.1`            | Docker Compose: where the app is published on the host.                                                    |
+| `DOMAIN`                                  | `localhost`                    | Docker Compose `https` profile: the public hostname Caddy serves.                                          |
+
+Most calls connect with STUN alone, but some networks (corporate firewalls, some mobile carriers)
+need a TURN relay. The variable names used by earlier versions (`HEROKU_TWILLIO_SID`,
+`LOCAL_AUTH_TOKEN`, and so on) still work.
+
+## Development
+
+You need Node.js 22.22 or newer.
+
+```sh
 npm install
+npm run dev
 ```
 
-#### Start the server
+Open <http://localhost:5173>. This runs the Vite dev server with hot reloading and the signaling
+server on port 3000, and restarts the server when you change it.
 
+| Command            | What it does                                                        |
+| ------------------ | ------------------------------------------------------------------- |
+| `npm run dev`      | Start the app for development.                                      |
+| `npm run build`    | Build the web client into `build/client`.                           |
+| `npm start`        | Serve the built client and run the signaling server.                |
+| `npm run check`    | Formatting, lint, typecheck, and unit tests; run before committing. |
+| `npm test`         | Unit and integration tests (Vitest).                                |
+| `npm run test:e2e` | Browser tests with two fake cameras making real calls (Playwright). |
+| `npm run format`   | Format everything with Prettier.                                    |
+
+The end-to-end tests need a browser the first time: `npx playwright install chromium`. They build
+the app and start a server themselves; set `E2E_BASE_URL` to test one that's already running, such
+as the Docker container.
+
+## How it works
+
+The Node server serves the pre-built web app and runs a small [Socket.IO](https://socket.io)
+signaling service. When two people open the same call link, the server introduces them, hands out
+STUN/TURN servers, and relays the WebRTC offer, answer, and network candidates. From then on audio,
+video, and chat (over a WebRTC data channel) flow directly between the two browsers, encrypted with
+DTLS-SRTP. The server never sees the media.
+
+```text
+app/                  Web client: React 19 + React Router 8 (pre-rendered pages, SPA call page)
+  call/               The call screen
+    call-session.ts   Signaling and the WebRTC connection, including recovery from drops
+    local-media.ts    Camera, microphone, and screen sharing
+    peer-messages.ts  Messages sent over the data channel (chat, captions, mute state)
+  routes/             Pages: landing, new call, call, unsupported browser
+server/               Express 5 + Socket.IO signaling server, run directly by Node (no build step)
+shared/protocol.ts    Signaling messages and validation shared by the client and the server
+e2e/                  Playwright end-to-end tests
 ```
-npm start
-```
 
-- Open `localhost:3000` in browser
-- If you want to use a client on another computer/network, make sure you publish your server on an HTTPS connection.
-  You can use a service like [ngrok](https://ngrok.com/) for that.
+## Deploying elsewhere
 
-## Contributing
+Any host that runs Node.js 22.22 or newer works: run `npm ci && npm run build`, then `npm start`.
+On Heroku the build runs automatically and HTTPS redirects are on by default.
 
-Pull Requests are welcome!
+## Credits and license
 
-Please run prettier on all of your PRs before submitting, this can be done with `prettier --write` in the project directory
-
-For communication we use Gitter Chat which can be found here: [![Join the chat at https://gitter.im/zipcall](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/zipcall)
+Zipcall was created by [Ian Ramzy](https://ianramzy.com) and is licensed under
+[Creative Commons Attribution-NonCommercial 4.0](LICENSE).
