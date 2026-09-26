@@ -1,0 +1,54 @@
+# Run Zipcall with Docker Compose.
+#
+#   docker compose up -d
+#     The app on http://localhost:3000 (this machine only).
+#
+#   DOMAIN=call.example.com docker compose --profile https up -d
+#     Also starts Caddy, which serves the app over HTTPS with an automatic
+#     certificate. Point the domain's DNS at this machine and open ports 80
+#     and 443 first.
+#
+# Settings come from .env; see .env.template.
+name: zipcall
+
+services:
+  app:
+    build: .
+    image: zipcall
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PORT: "3000"
+    ports:
+      # Browsers only allow camera access over HTTPS or on localhost, so by
+      # default the app is reachable from this machine only. Use the https
+      # profile, or your own reverse proxy, to serve it to others.
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-3000}:3000"
+    logging:
+      driver: local
+
+  caddy:
+    image: caddy:2-alpine
+    profiles: [https]
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    logging:
+      driver: local
+
+volumes:
+  caddy-data:
+  caddy-config:

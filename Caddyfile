@@ -1,0 +1,8 @@
+# Serves Zipcall over HTTPS and forwards everything, including the
+# signaling WebSocket, to the app container. Caddy gets and renews the
+# certificate for $DOMAIN automatically (for "localhost" it uses its own
+# local certificate authority).
+{$DOMAIN:localhost} {
+	encode zstd gzip
+	reverse_proxy app:3000
+}

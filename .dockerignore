@@ -1,0 +1,16 @@
+# Keep the build context to what the image needs (see Dockerfile).
+.git
+.github
+.env*
+node_modules
+build
+.react-router
+test-results
+playwright-report
+e2e
+images
+**/*.test.ts
+*.md
+Dockerfile
+docker-compose.yml
+Caddyfile
