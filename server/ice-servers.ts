@@ -1,6 +1,7 @@
+import { createHmac, randomBytes } from "node:crypto";
 import twilio from "twilio";
 import type { IceServer } from "../shared/protocol.ts";
-import type { Config, TwilioCredentials } from "./config.ts";
+import type { Config, TurnServerConfig, TwilioCredentials } from "./config.ts";
 import type { Logger } from "./logger.ts";
 
 /**
@@ -16,6 +17,8 @@ export function createIceServerProvider(
   onFailure?: () => void,
 ): IceServerProvider {
   const stun = stunServers(config.stunUrls);
+  const turn = config.turn;
+  if (turn !== null) return () => Promise.resolve([...stun, turnCredentials(turn)]);
   if (config.twilio === null) return () => Promise.resolve(stun);
   return createCachedIceServerProvider({
     fetchIceServers: createTwilioFetcher(config.twilio),
@@ -23,6 +26,26 @@ export function createIceServerProvider(
     logger,
     onFailure,
   });
+}
+
+/**
+ * Short-lived credentials for your own TURN server, in the shared-secret
+ * scheme coturn calls use-auth-secret: the username is an expiry timestamp
+ * and a random id, and the password is an HMAC of it keyed with the
+ * secret. The TURN server checks them without talking to us.
+ */
+export function turnCredentials(
+  { urls, secret }: TurnServerConfig,
+  {
+    ttlSeconds = 24 * 60 * 60,
+    now = Date.now,
+    id = () => randomBytes(8).toString("hex"),
+  }: { ttlSeconds?: number; now?: () => number; id?: () => string } = {},
+): IceServer {
+  const expires = Math.floor(now() / 1000) + ttlSeconds;
+  const username = `${expires}:${id()}`;
+  const credential = createHmac("sha1", secret).update(username).digest("base64");
+  return { urls, username, credential };
 }
 
 export function stunServers(urls: string[]): IceServer[] {

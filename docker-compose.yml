@@ -8,6 +8,11 @@
 #     certificate. Point the domain's DNS at this machine and open ports 80
 #     and 443 first.
 #
+#   docker compose --profile https --profile turn up -d
+#     Also starts a TURN relay (coturn) for callers behind strict firewalls.
+#     Needs TURN_SECRET, TURN_URLS and, on most cloud servers,
+#     TURN_EXTERNAL_IP in .env; open UDP/TCP 3478 and UDP 49160-49200.
+#
 # Settings come from .env; see .env.template.
 name: zipcall
 
@@ -53,6 +58,49 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+    logging:
+      driver: local
+
+  turn:
+    image: coturn/coturn:4.7
+    profiles: [turn]
+    restart: unless-stopped
+    # TURN relays use a range of UDP ports; host networking avoids mapping
+    # each one and preserves the addresses coturn sees.
+    network_mode: host
+    environment:
+      TURN_SECRET: ${TURN_SECRET:-}
+      TURN_REALM: ${TURN_REALM:-zipcall}
+      TURN_EXTERNAL_IP: ${TURN_EXTERNAL_IP:-}
+    # Refuses to start without a secret: an empty one would let anyone
+    # mint credentials and use the relay.
+    entrypoint:
+      - sh
+      - -c
+      - |
+        if [ "$${#TURN_SECRET}" -lt 16 ]; then
+          echo "Set TURN_SECRET (16+ characters) in .env to use the turn profile." >&2
+          exit 1
+        fi
+        exec turnserver \
+          --use-auth-secret --static-auth-secret="$$TURN_SECRET" \
+          --realm="$$TURN_REALM" \
+          $${TURN_EXTERNAL_IP:+--external-ip="$$TURN_EXTERNAL_IP"} \
+          --listening-port=3478 --min-port=49160 --max-port=49200 \
+          --fingerprint --no-cli --no-tls --no-dtls --no-multicast-peers \
+          --denied-peer-ip=0.0.0.0-0.255.255.255 \
+          --denied-peer-ip=10.0.0.0-10.255.255.255 \
+          --denied-peer-ip=100.64.0.0-100.127.255.255 \
+          --denied-peer-ip=127.0.0.0-127.255.255.255 \
+          --denied-peer-ip=169.254.0.0-169.254.255.255 \
+          --denied-peer-ip=172.16.0.0-172.31.255.255 \
+          --denied-peer-ip=192.0.0.0-192.0.0.255 \
+          --denied-peer-ip=192.168.0.0-192.168.255.255 \
+          --denied-peer-ip=198.18.0.0-198.19.255.255 \
+          --denied-peer-ip=::1 \
+          --denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff \
+          --denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff \
+          --log-file=stdout --simple-log
     logging:
       driver: local
 

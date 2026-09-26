@@ -44,16 +44,16 @@ Each phase is one commit with its own tests, and this checklist is updated as ph
       result, relayed and dropped messages, refused connections, TURN credential failures, memory),
       only with `METRICS_TOKEN` and a matching bearer token.
 
-## Phase 3: Self-hosted TURN
+## Phase 3: Self-hosted TURN (done)
 
-- [ ] TURN credentials for your own coturn server (`TURN_URLS`, `TURN_SECRET`), as an alternative
-      to Twilio.
-- [ ] Relay-only mode (`ICE_TRANSPORT_POLICY=relay`) so participants never see each other's IP
+- [x] TURN credentials for your own coturn server (`TURN_URLS`, `TURN_SECRET`), as an alternative
+      to Twilio: fresh HMAC-signed credentials per join that expire after a day.
+- [x] Relay-only mode (`ICE_TRANSPORT_POLICY=relay`) so participants never see each other's IP
       addresses.
-- [ ] Docker Compose `turn` profile with a hardened coturn configuration.
-
-Acceptance: unit tests; a relay-only call through a real coturn server in the browser tests if the
-image is available.
+- [x] Docker Compose `turn` profile with a hardened coturn: it refuses to start without a strong
+      secret and won't relay to private, loopback, or cloud-metadata addresses.
+- [x] Verified with a real coturn: CI runs the whole browser suite with every call forced through
+      the relay, and a test checks the connection's selected candidates are relays.
 
 ## Phase 4: Call robustness and UX
 

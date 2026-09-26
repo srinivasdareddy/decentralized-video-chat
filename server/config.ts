@@ -6,6 +6,12 @@ export interface TwilioCredentials {
   authToken: string;
 }
 
+/** Your own TURN server, using the shared-secret scheme (coturn's use-auth-secret). */
+export interface TurnServerConfig {
+  urls: string[];
+  secret: string;
+}
+
 export interface Config {
   /** Port for both HTTP and Socket.IO. */
   port: number;
@@ -24,8 +30,15 @@ export interface Config {
   allowedOrigins: string[];
   /** Concurrent signaling connections allowed from one IP address. */
   maxConnectionsPerIp: number;
-  /** Credentials for Twilio's TURN relays, or null to use STUN only. */
+  /** Credentials for Twilio's TURN relays, or null. */
   twilio: TwilioCredentials | null;
+  /** Your own TURN server, or null. At most one of this and `twilio` is set. */
+  turn: TurnServerConfig | null;
+  /**
+   * "relay" sends all media through TURN, so participants never learn each
+   * other's IP addresses. Needs a TURN server (yours or Twilio's).
+   */
+  iceTransportPolicy: "all" | "relay";
   /** STUN servers handed to browsers when TURN relays are unavailable. */
   stunUrls: string[];
   /** Directory holding the built web client (`npm run build`). */
@@ -51,6 +64,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   // Heroku (which sets DYNO) terminates TLS in its router, so redirect by
   // default there, as earlier versions of Zipcall did, and trust its router.
   const onHeroku = "DYNO" in env;
+  const twilio = parseTwilioCredentials(env);
+  const turn = parseTurnServer(env);
+  if (twilio !== null && turn !== null) {
+    throw new ConfigError(
+      "Configure either your own TURN server (TURN_URLS, TURN_SECRET) or Twilio, not both.",
+    );
+  }
+  const iceTransportPolicy =
+    parseChoice("ICE_TRANSPORT_POLICY", env.ICE_TRANSPORT_POLICY, ["all", "relay"]) ?? "all";
+  if (iceTransportPolicy === "relay" && twilio === null && turn === null) {
+    throw new ConfigError(
+      "ICE_TRANSPORT_POLICY=relay needs a TURN server: set TURN_URLS and TURN_SECRET, or Twilio credentials.",
+    );
+  }
   return {
     port: parseInteger("PORT", env.PORT, { min: 0, max: 65_535 }) ?? DEFAULT_PORT,
     forceHttps: parseBoolean("FORCE_HTTPS", env.FORCE_HTTPS) ?? onHeroku,
@@ -59,7 +86,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     maxConnectionsPerIp:
       parseInteger("MAX_CONNECTIONS_PER_IP", env.MAX_CONNECTIONS_PER_IP, { min: 1 }) ??
       DEFAULT_MAX_CONNECTIONS_PER_IP,
-    twilio: parseTwilioCredentials(env),
+    twilio,
+    turn,
+    iceTransportPolicy,
     stunUrls: parseList(env.STUN_URLS) ?? DEFAULT_STUN_URLS,
     clientDir: DEFAULT_CLIENT_DIR,
     logLevel: parseChoice("LOG_LEVEL", env.LOG_LEVEL, ["debug", "info", "warn", "error"]) ?? "info",
@@ -166,6 +195,24 @@ function parseTwilioCredentials(env: NodeJS.ProcessEnv): TwilioCredentials | nul
     );
   }
   return { accountSid, authToken };
+}
+
+function parseTurnServer(env: NodeJS.ProcessEnv): TurnServerConfig | null {
+  const urls = parseList(env.TURN_URLS);
+  const secret = env.TURN_SECRET?.trim() || undefined;
+  if (urls === undefined && secret === undefined) return null;
+  if (urls === undefined || secret === undefined) {
+    throw new ConfigError("Set both TURN_URLS and TURN_SECRET to use your own TURN server.");
+  }
+  for (const url of urls) {
+    if (!/^turns?:[^\s]+$/.test(url)) {
+      throw new ConfigError(`TURN_URLS entries must start with turn: or turns:, got "${url}".`);
+    }
+  }
+  if (secret.length < 16) {
+    throw new ConfigError("TURN_SECRET must be at least 16 characters, so it can't be guessed.");
+  }
+  return { urls, secret };
 }
 
 function firstSet(...values: (string | undefined)[]): string | undefined {

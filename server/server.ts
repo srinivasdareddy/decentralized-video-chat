@@ -78,6 +78,7 @@ export function createZipcallServer(
       ...dependencies.limits,
     },
     metrics,
+    iceTransportPolicy: config.iceTransportPolicy,
   });
 
   registry.gauge(

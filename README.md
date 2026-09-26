@@ -34,6 +34,15 @@ DOMAIN=call.example.com docker compose --profile https up -d
 Behind your own reverse proxy instead? Leave the profile off and forward traffic, including
 WebSocket upgrades, to port 3000.
 
+For callers behind strict firewalls, run your own TURN relay with the `turn` profile. Set
+`TURN_SECRET` (a long random string), `TURN_URLS` (for example
+`turn:call.example.com:3478?transport=udp,turn:call.example.com:3478?transport=tcp`) and, on most
+cloud servers, `TURN_EXTERNAL_IP` in `.env`, and open UDP/TCP 3478 and UDP 49160–49200:
+
+```sh
+docker compose --profile https --profile turn up -d
+```
+
 ## Configuration
 
 Copy `.env.template` to `.env` and uncomment what you need. Every setting is optional.
@@ -41,6 +50,8 @@ Copy `.env.template` to `.env` and uncomment what you need. Every setting is opt
 | Variable                                  | Default                                     | Purpose                                                                                                    |
 | ----------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` | unset                                       | Twilio credentials for TURN relays, which connect calls through strict firewalls. Without them, STUN only. |
+| `TURN_URLS`, `TURN_SECRET`                | unset                                       | Your own TURN server (such as coturn with `use-auth-secret`) instead of Twilio.                            |
+| `ICE_TRANSPORT_POLICY`                    | `all`                                       | `relay` sends all media through TURN so participants never see each other's IP addresses.                  |
 | `STUN_URLS`                               | `stun:stun.l.google.com:19302`              | Comma-separated STUN servers.                                                                              |
 | `PORT`                                    | `3000`                                      | Port for the web app and signaling server (not used with Docker Compose).                                  |
 | `FORCE_HTTPS`                             | `true` on Heroku, else `false`              | Redirect plain-HTTP requests to HTTPS behind a proxy that sets `X-Forwarded-Proto`.                        |

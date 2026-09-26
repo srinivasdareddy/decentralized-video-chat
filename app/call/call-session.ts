@@ -120,6 +120,7 @@ export class CallSession {
   #disposed = false;
   #joined = false;
   #iceServers: IceServer[] = [];
+  #iceTransportPolicy: RTCIceTransportPolicy = "all";
   #initiator = false;
   #pc: RTCPeerConnection | null = null;
   #channel: RTCDataChannel | null = null;
@@ -236,6 +237,7 @@ export class CallSession {
     }
 
     this.#iceServers = response.iceServers;
+    this.#iceTransportPolicy = response.iceTransportPolicy ?? "all";
     this.#joined = true;
     const offer = this.#pendingOffer;
     this.#pendingOffer = null;
@@ -369,7 +371,10 @@ export class CallSession {
 
   #createPeerConnection(): RTCPeerConnection {
     this.#closePeerConnection();
-    const pc = new RTCPeerConnection({ iceServers: this.#iceServers });
+    const pc = new RTCPeerConnection({
+      iceServers: this.#iceServers,
+      iceTransportPolicy: this.#iceTransportPolicy,
+    });
     this.#pc = pc;
 
     const remoteStream = new MediaStream();

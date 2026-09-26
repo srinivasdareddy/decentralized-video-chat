@@ -1,6 +1,14 @@
+import { createHmac } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import type { IceServer } from "../shared/protocol.ts";
-import { createCachedIceServerProvider, normalizeIceServers, stunServers } from "./ice-servers.ts";
+import { loadConfig } from "./config.ts";
+import {
+  createCachedIceServerProvider,
+  createIceServerProvider,
+  normalizeIceServers,
+  stunServers,
+  turnCredentials,
+} from "./ice-servers.ts";
 import { silentLogger } from "./logger.ts";
 
 const TURN: IceServer[] = [{ urls: "turn:turn.example:3478", username: "u", credential: "c" }];
@@ -81,5 +89,40 @@ describe("stunServers", () => {
   it("groups the URLs into one entry", () => {
     expect(stunServers(["stun:a", "stun:b"])).toEqual([{ urls: ["stun:a", "stun:b"] }]);
     expect(stunServers([])).toEqual([]);
+  });
+});
+
+describe("turnCredentials", () => {
+  const turn = { urls: ["turn:turn.example:3478"], secret: "a-long-shared-secret" };
+
+  it("signs an expiring username with the shared secret", () => {
+    const server = turnCredentials(turn, {
+      now: () => 1_700_000_000_000,
+      ttlSeconds: 3600,
+      id: () => "abc123",
+    });
+    expect(server.urls).toEqual(["turn:turn.example:3478"]);
+    expect(server.username).toBe("1700003600:abc123");
+    expect(server.credential).toBe(
+      createHmac("sha1", "a-long-shared-secret").update("1700003600:abc123").digest("base64"),
+    );
+  });
+
+  it("gives every caller different credentials", () => {
+    expect(turnCredentials(turn).username).not.toBe(turnCredentials(turn).username);
+  });
+
+  it("is offered alongside STUN when configured", async () => {
+    const provider = createIceServerProvider(
+      {
+        ...loadConfig({}),
+        stunUrls: ["stun:stun.example:3478"],
+        turn,
+      },
+      silentLogger,
+    );
+    const servers = await provider();
+    expect(servers[0]).toEqual({ urls: ["stun:stun.example:3478"] });
+    expect(servers[1]).toMatchObject({ urls: turn.urls, username: expect.any(String) as unknown });
   });
 });

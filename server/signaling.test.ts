@@ -35,6 +35,7 @@ interface ServerOptions {
   trustProxy?: number;
   allowedOrigins?: string[];
   metricsToken?: string;
+  iceTransportPolicy?: "all" | "relay";
 }
 
 /** Starts a server and returns a function that connects a client to it. */
@@ -49,6 +50,7 @@ async function startServer(
       trustProxy: options.trustProxy ?? 0,
       allowedOrigins: options.allowedOrigins ?? [],
       metricsToken: options.metricsToken ?? null,
+      iceTransportPolicy: options.iceTransportPolicy ?? "all",
     },
     {
       logger: silentLogger,
@@ -337,6 +339,17 @@ describe("abuse limits", () => {
     for (let i = 0; i < 6; i++) alice.emit("candidate", CANDIDATE);
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(received).toBe(3);
+  });
+});
+
+describe("relay-only calls", () => {
+  it("tell browsers to use only TURN relays", async () => {
+    const newClient = await startServer({ iceTransportPolicy: "relay" });
+    expect(await join(await newClient(), "room")).toEqual({
+      ok: true,
+      iceServers: ICE_SERVERS,
+      iceTransportPolicy: "relay",
+    });
   });
 });
 

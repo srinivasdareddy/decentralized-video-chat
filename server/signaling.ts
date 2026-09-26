@@ -56,6 +56,7 @@ export interface SignalingOptions {
   trustProxy: number;
   limits: SignalingLimits;
   metrics?: SignalingMetrics;
+  iceTransportPolicy?: "all" | "relay";
 }
 
 export const DEFAULT_LIMITS: SignalingLimits = {
@@ -76,7 +77,14 @@ export const DEFAULT_LIMITS: SignalingLimits = {
  */
 export function registerSignaling(
   io: SignalingServer,
-  { getIceServers, logger, trustProxy, limits, metrics }: SignalingOptions,
+  {
+    getIceServers,
+    logger,
+    trustProxy,
+    limits,
+    metrics,
+    iceTransportPolicy = "all",
+  }: SignalingOptions,
 ): () => void {
   const connectionsByIp = new Map<string, number>();
   const joinLimiter = new RateLimiter({
@@ -140,7 +148,7 @@ export function registerSignaling(
         return;
       }
       try {
-        await handleJoin(io, socket, request, reply, getIceServers, logger);
+        await handleJoin(io, socket, request, reply, getIceServers, logger, iceTransportPolicy);
       } catch (error) {
         logger.error("Failed to handle a join", error);
         // Give the slot back so the room isn't stuck looking occupied.
@@ -198,6 +206,7 @@ async function handleJoin(
   reply: (response: JoinResponse) => void,
   getIceServers: IceServerProvider,
   logger: Logger,
+  iceTransportPolicy: "all" | "relay",
 ): Promise<void> {
   const request = parseJoinRequest(rawRequest);
   if (request === null) {
@@ -236,7 +245,11 @@ async function handleJoin(
 
   const iceServers = await getIceServers();
   if (socket.disconnected) return;
-  reply({ ok: true, iceServers });
+  reply(
+    iceTransportPolicy === "relay"
+      ? { ok: true, iceServers, iceTransportPolicy }
+      : { ok: true, iceServers },
+  );
   // Sent after the reply so the newcomer is ready before the offer arrives.
   // Whoever was already waiting starts the call.
   if (others.length > 0) socket.to(room).emit("peer-joined");

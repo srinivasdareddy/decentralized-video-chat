@@ -67,6 +67,43 @@ jobs:
             test-results/
           retention-days: 7
 
+  relay:
+    name: End-to-end tests through a TURN relay
+    # Pull requests from this repository's own branches already ran on push.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    env:
+      # Every call must go through the relay, so these tests only pass if the
+      # server's TURN credentials work with a real coturn.
+      TURN_URLS: turn:127.0.0.1:3479?transport=udp
+      TURN_SECRET: ci-only-turn-secret-0123456789
+      ICE_TRANSPORT_POLICY: relay
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Start a local TURN server
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends coturn
+          turnserver --daemon --listening-ip=127.0.0.1 --relay-ip=127.0.0.1 \
+            --listening-port=3479 --min-port=49300 --max-port=49400 \
+            --use-auth-secret --static-auth-secret="$TURN_SECRET" --realm=zipcall \
+            --fingerprint --no-cli --no-tls --no-dtls --allow-loopback-peers
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-relay
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
   docker:
     name: Docker image
     # Pull requests from this repository's own branches already ran on push.

@@ -57,7 +57,14 @@ export type JoinError =
   | "rate-limited"
   | "server-error";
 
-export type JoinResponse = { ok: true; iceServers: IceServer[] } | { ok: false; error: JoinError };
+export type JoinResponse =
+  | {
+      ok: true;
+      iceServers: IceServer[];
+      /** "relay": use only TURN, so neither side sees the other's IP address. */
+      iceTransportPolicy?: "relay";
+    }
+  | { ok: false; error: JoinError };
 
 export interface ClientToServerEvents {
   join: (request: JoinRequest, ack: (response: JoinResponse) => void) => void;

@@ -93,6 +93,46 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ METRICS_TOKEN: "short" })).toThrow(ConfigError);
   });
 
+  it("accepts your own TURN server", () => {
+    const config = loadConfig({
+      TURN_URLS: "turn:turn.example:3478?transport=udp, turns:turn.example:5349",
+      TURN_SECRET: "a-long-shared-secret",
+    });
+    expect(config.turn).toEqual({
+      urls: ["turn:turn.example:3478?transport=udp", "turns:turn.example:5349"],
+      secret: "a-long-shared-secret",
+    });
+    expect(loadConfig({}).turn).toBeNull();
+  });
+
+  it("rejects incomplete, malformed, or conflicting TURN settings", () => {
+    const secret = "a-long-shared-secret";
+    expect(() => loadConfig({ TURN_URLS: "turn:turn.example" })).toThrow(ConfigError);
+    expect(() => loadConfig({ TURN_URLS: "stun:x", TURN_SECRET: secret })).toThrow(/turn:/);
+    expect(() => loadConfig({ TURN_URLS: "turn:x", TURN_SECRET: "short" })).toThrow(/16/);
+    expect(() =>
+      loadConfig({
+        TURN_URLS: "turn:x",
+        TURN_SECRET: secret,
+        TWILIO_ACCOUNT_SID: SID,
+        TWILIO_AUTH_TOKEN: "t",
+      }),
+    ).toThrow(/not both/);
+  });
+
+  it("allows relay-only calls only with a TURN server", () => {
+    expect(loadConfig({}).iceTransportPolicy).toBe("all");
+    expect(() => loadConfig({ ICE_TRANSPORT_POLICY: "relay" })).toThrow(/needs a TURN server/);
+    expect(
+      loadConfig({
+        ICE_TRANSPORT_POLICY: "relay",
+        TURN_URLS: "turn:x",
+        TURN_SECRET: "a-long-shared-secret",
+      }).iceTransportPolicy,
+    ).toBe("relay");
+    expect(() => loadConfig({ ICE_TRANSPORT_POLICY: "p2p" })).toThrow(ConfigError);
+  });
+
   it("parses a comma-separated STUN list", () => {
     expect(loadConfig({ STUN_URLS: "stun:a:3478, stun:b:3478" }).stunUrls).toEqual([
       "stun:a:3478",

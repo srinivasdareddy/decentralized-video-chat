@@ -53,12 +53,13 @@ server.httpServer.listen(config.port, () => {
     url: `http://localhost:${config.port}`,
     version: version.version,
     revision: version.revision ?? undefined,
-    turn: config.twilio === null ? "off" : "twilio",
+    turn: config.turn !== null ? "self-hosted" : config.twilio !== null ? "twilio" : "off",
+    iceTransportPolicy: config.iceTransportPolicy,
     metrics: config.metricsToken !== null,
   });
-  if (config.twilio === null) {
+  if (config.turn === null && config.twilio === null) {
     logger.warn(
-      "TURN relays are off because Twilio isn't configured, so calls between some networks may fail to connect. Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN to enable them.",
+      "TURN relays are off, so calls between some networks may fail to connect. Set TURN_URLS and TURN_SECRET for your own TURN server, or TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN.",
     );
   }
 });
