@@ -75,11 +75,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker compose build
+        env:
+          REVISION: ${{ github.sha }}
       - name: Start the app and wait until it's healthy
         run: docker compose up --detach --wait --wait-timeout 60
-      - name: Serve pages
+      - name: Serve pages and report the right revision
         run: |
-          curl --fail --silent --show-error http://localhost:3000/healthz
+          curl --fail --silent --show-error http://localhost:3000/healthz | tee healthz.json
+          grep --quiet '"revision":"${{ github.sha }}"' healthz.json
           curl --fail --silent --show-error --output /dev/null http://localhost:3000/
           curl --fail --silent --show-error --output /dev/null http://localhost:3000/join/ci-check
       - if: always()

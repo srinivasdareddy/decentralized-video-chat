@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Server, Socket } from "socket.io";
 import {
   ROOM_CAPACITY,
@@ -11,6 +12,7 @@ import {
 import { clientIp, isLocalAddress } from "./client-ip.ts";
 import type { IceServerProvider } from "./ice-servers.ts";
 import type { Logger } from "./logger.ts";
+import type { SignalingMetrics } from "./metrics.ts";
 import { RateLimiter } from "./rate-limit.ts";
 
 interface SocketData {
@@ -53,6 +55,7 @@ export interface SignalingOptions {
   /** Reverse proxies in front of the server (see Config.trustProxy). */
   trustProxy: number;
   limits: SignalingLimits;
+  metrics?: SignalingMetrics;
 }
 
 export const DEFAULT_LIMITS: SignalingLimits = {
@@ -73,7 +76,7 @@ export const DEFAULT_LIMITS: SignalingLimits = {
  */
 export function registerSignaling(
   io: SignalingServer,
-  { getIceServers, logger, trustProxy, limits }: SignalingOptions,
+  { getIceServers, logger, trustProxy, limits, metrics }: SignalingOptions,
 ): () => void {
   const connectionsByIp = new Map<string, number>();
   const joinLimiter = new RateLimiter({
@@ -96,7 +99,8 @@ export function registerSignaling(
     if (isLocalAddress(ip)) return next();
     const connections = connectionsByIp.get(ip) ?? 0;
     if (connections >= limits.connectionsPerIp) {
-      logger.warn(`Refused a connection from ${ip}: too many open connections`);
+      logger.warn("Refused a connection: too many from one address", { ip });
+      metrics?.refused.inc({ reason: "too-many-connections" });
       return next(new Error("too-many-connections"));
     }
     connectionsByIp.set(ip, connections + 1);
@@ -109,18 +113,28 @@ export function registerSignaling(
     let warnedAboutRelays = false;
 
     /** Whether this connection may relay another message right now. */
-    const mayRelay = (): boolean => {
-      if (relayLimiter.take(socket.id)) return true;
+    const mayRelay = (type: "offer" | "answer" | "candidate"): boolean => {
+      if (relayLimiter.take(socket.id)) {
+        metrics?.relayed.inc({ type });
+        return true;
+      }
+      metrics?.dropped.inc();
       if (!warnedAboutRelays) {
         warnedAboutRelays = true;
-        logger.warn(`${socket.data.room ?? "no room"}: dropping relayed messages from ${ip}`);
+        logger.warn("Dropping relayed messages: the connection sent too many", {
+          room: roomTag(socket.data.room),
+          ip,
+        });
       }
       return false;
     };
 
     socket.on("join", async (request: unknown, ack: unknown) => {
       if (typeof ack !== "function") return;
-      const reply = ack as (response: JoinResponse) => void;
+      const reply = (response: JoinResponse) => {
+        metrics?.joins.inc({ result: response.ok ? "ok" : response.error });
+        (ack as (response: JoinResponse) => void)(response);
+      };
       if (limited && !joinLimiter.take(ip)) {
         reply({ ok: false, error: "rate-limited" });
         return;
@@ -128,7 +142,7 @@ export function registerSignaling(
       try {
         await handleJoin(io, socket, request, reply, getIceServers, logger);
       } catch (error) {
-        logger.error("Failed to handle join", error);
+        logger.error("Failed to handle a join", error);
         // Give the slot back so the room isn't stuck looking occupied.
         const room = socket.data.room;
         if (room !== undefined) {
@@ -141,21 +155,21 @@ export function registerSignaling(
 
     socket.on("offer", (description: unknown) => {
       const room = socket.data.room;
-      if (room !== undefined && isSessionDescription(description, "offer") && mayRelay()) {
+      if (room !== undefined && isSessionDescription(description, "offer") && mayRelay("offer")) {
         socket.to(room).emit("offer", description);
       }
     });
 
     socket.on("answer", (description: unknown) => {
       const room = socket.data.room;
-      if (room !== undefined && isSessionDescription(description, "answer") && mayRelay()) {
+      if (room !== undefined && isSessionDescription(description, "answer") && mayRelay("answer")) {
         socket.to(room).emit("answer", description);
       }
     });
 
     socket.on("candidate", (candidate: unknown) => {
       const room = socket.data.room;
-      if (room !== undefined && isIceCandidate(candidate) && mayRelay()) {
+      if (room !== undefined && isIceCandidate(candidate) && mayRelay("candidate")) {
         socket.to(room).emit("candidate", candidate);
       }
     });
@@ -169,7 +183,7 @@ export function registerSignaling(
       }
       const { room, replaced } = socket.data;
       if (room === undefined || replaced === true) return;
-      logger.info(`${room}: peer left (${reason})`);
+      logger.info("Left a call", { room: roomTag(room), reason });
       socket.to(room).emit("peer-left");
     });
   });
@@ -210,7 +224,7 @@ async function handleJoin(
   }
   const others = members.filter((member) => member.data.replaced !== true);
   if (others.length >= ROOM_CAPACITY) {
-    logger.info(`${room}: rejected a join because the room is full`);
+    logger.info("Refused a join: the call is full", { room: roomTag(room) });
     reply({ ok: false, error: "room-full" });
     return;
   }
@@ -218,7 +232,7 @@ async function handleJoin(
   socket.data.room = room;
   socket.data.clientId = clientId;
   void socket.join(room);
-  logger.info(`${room}: peer joined (${others.length + 1}/${ROOM_CAPACITY})`);
+  logger.info("Joined a call", { room: roomTag(room), participants: others.length + 1 });
 
   const iceServers = await getIceServers();
   if (socket.disconnected) return;
@@ -234,4 +248,14 @@ function roomMembers(io: SignalingServer, room: string): SignalingSocket[] {
     const member = io.sockets.sockets.get(id);
     return member === undefined ? [] : [member];
   });
+}
+
+/**
+ * A short, stable stand-in for a room name in logs: enough to follow one
+ * call's events without logs revealing what people named their calls.
+ */
+export function roomTag(room: string | undefined): string | undefined {
+  return room === undefined
+    ? undefined
+    : createHash("sha256").update(room).digest("hex").slice(0, 12);
 }

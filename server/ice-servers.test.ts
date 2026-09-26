@@ -47,7 +47,9 @@ describe("createCachedIceServerProvider", () => {
     const { provider, logger, advance } = setup(fetch);
 
     await expect(provider()).resolves.toEqual(STUN);
-    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("401"));
+    expect(logger.warn).toHaveBeenCalledWith(expect.any(String), {
+      reason: expect.stringContaining("401") as unknown,
+    });
     await expect(provider()).resolves.toEqual(STUN);
 
     advance(100);

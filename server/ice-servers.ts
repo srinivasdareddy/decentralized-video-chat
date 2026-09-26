@@ -10,13 +10,18 @@ import type { Logger } from "./logger.ts";
  */
 export type IceServerProvider = () => Promise<IceServer[]>;
 
-export function createIceServerProvider(config: Config, logger: Logger): IceServerProvider {
+export function createIceServerProvider(
+  config: Config,
+  logger: Logger,
+  onFailure?: () => void,
+): IceServerProvider {
   const stun = stunServers(config.stunUrls);
   if (config.twilio === null) return () => Promise.resolve(stun);
   return createCachedIceServerProvider({
     fetchIceServers: createTwilioFetcher(config.twilio),
     fallback: stun,
     logger,
+    onFailure,
   });
 }
 
@@ -34,6 +39,8 @@ export interface CachedIceServerProviderOptions {
   failureCacheMs?: number;
   timeoutMs?: number;
   now?: () => number;
+  /** Called on each failed attempt, e.g. to count failures. */
+  onFailure?: () => void;
 }
 
 /**
@@ -48,6 +55,7 @@ export function createCachedIceServerProvider({
   failureCacheMs = 30 * 1000,
   timeoutMs = 5000,
   now = Date.now,
+  onFailure,
 }: CachedIceServerProviderOptions): IceServerProvider {
   let cached: { servers: IceServer[]; expiresAt: number } | undefined;
   let pending: Promise<IceServer[]> | undefined;
@@ -58,9 +66,10 @@ export function createCachedIceServerProvider({
       cached = { servers, expiresAt: now() + cacheMs };
       return servers;
     } catch (error) {
-      logger.warn(
-        `Could not get TURN credentials, using STUN only for now: ${errorMessage(error)}`,
-      );
+      logger.warn("Could not get TURN credentials; using STUN only for now", {
+        reason: errorMessage(error),
+      });
+      onFailure?.();
       cached = { servers: fallback, expiresAt: now() + failureCacheMs };
       return fallback;
     } finally {

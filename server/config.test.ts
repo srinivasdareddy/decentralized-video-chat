@@ -79,6 +79,20 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ MAX_CONNECTIONS_PER_IP: "0" })).toThrow(ConfigError);
   });
 
+  it("logs JSON in production and readable text elsewhere", () => {
+    expect(loadConfig({})).toMatchObject({ logLevel: "info", logFormat: "pretty" });
+    expect(loadConfig({ NODE_ENV: "production" }).logFormat).toBe("json");
+    expect(loadConfig({ NODE_ENV: "production", LOG_FORMAT: "pretty" }).logFormat).toBe("pretty");
+    expect(loadConfig({ LOG_LEVEL: "DEBUG" }).logLevel).toBe("debug");
+    expect(() => loadConfig({ LOG_LEVEL: "verbose" })).toThrow(ConfigError);
+  });
+
+  it("enables metrics only with a strong enough token", () => {
+    expect(loadConfig({}).metricsToken).toBeNull();
+    expect(loadConfig({ METRICS_TOKEN: "0123456789abcdef" }).metricsToken).toBe("0123456789abcdef");
+    expect(() => loadConfig({ METRICS_TOKEN: "short" })).toThrow(ConfigError);
+  });
+
   it("parses a comma-separated STUN list", () => {
     expect(loadConfig({ STUN_URLS: "stun:a:3478, stun:b:3478" }).stunUrls).toEqual([
       "stun:a:3478",

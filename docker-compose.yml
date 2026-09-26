@@ -13,7 +13,11 @@ name: zipcall
 
 services:
   app:
-    build: .
+    build:
+      context: .
+      args:
+        # e.g. REVISION=$(git rev-parse --short HEAD) docker compose build
+        REVISION: ${REVISION:-}
     image: zipcall
     restart: unless-stopped
     env_file:

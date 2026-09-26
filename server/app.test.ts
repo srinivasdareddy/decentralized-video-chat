@@ -7,6 +7,7 @@ import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "./app.ts";
 import { silentLogger } from "./logger.ts";
+import { MetricsRegistry } from "./metrics.ts";
 
 const PAGES: Record<string, string> = {
   "index.html": "landing page<script>window.landing = true;</script>",
@@ -36,12 +37,21 @@ afterEach(async () => {
   server = undefined;
 });
 
-async function start(options: { forceHttps?: boolean; dir?: string; trustProxy?: number } = {}) {
+async function start(
+  options: {
+    forceHttps?: boolean;
+    dir?: string;
+    trustProxy?: number;
+    metrics?: { registry: MetricsRegistry; token: string };
+  } = {},
+) {
   const app = createApp({
     clientDir: options.dir ?? clientDir,
     forceHttps: options.forceHttps ?? false,
     trustProxy: options.trustProxy ?? 0,
     logger: silentLogger,
+    version: { version: "9.9.9", revision: "abc1234" },
+    metrics: options.metrics,
   });
   const listening = app.listen(0, "127.0.0.1");
   server = listening;
@@ -52,11 +62,32 @@ async function start(options: { forceHttps?: boolean; dir?: string; trustProxy?:
 }
 
 describe("web app", () => {
-  it("reports health", async () => {
+  it("reports health, version, and uptime", async () => {
     const get = await start();
     const response = await get("/healthz");
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ status: "ok" });
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.json()).toEqual({
+      status: "ok",
+      version: "9.9.9",
+      revision: "abc1234",
+      uptimeSeconds: expect.any(Number) as unknown,
+    });
+  });
+
+  it("serves metrics only with the token, and only when enabled", async () => {
+    const registry = new MetricsRegistry();
+    registry.gauge("test_gauge", "A gauge.", () => 7);
+    const get = await start({ metrics: { registry, token: "a-long-enough-token" } });
+
+    expect((await get("/metrics")).status).toBe(401);
+    expect((await get("/metrics", { authorization: "Bearer wrong-token" })).status).toBe(401);
+    const response = await get("/metrics", { authorization: "Bearer a-long-enough-token" });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("test_gauge 7");
+
+    const withoutMetrics = await start();
+    expect((await withoutMetrics("/metrics")).status).toBe(404);
   });
 
   it.each([

@@ -7,6 +7,7 @@ import type {
   JoinResponse,
   ServerToClientEvents,
 } from "../shared/protocol.ts";
+import { loadConfig } from "./config.ts";
 import { silentLogger } from "./logger.ts";
 import { createZipcallServer, type ZipcallServer } from "./server.ts";
 import type { SignalingLimits } from "./signaling.ts";
@@ -33,6 +34,7 @@ interface ServerOptions {
   limits?: Partial<SignalingLimits>;
   trustProxy?: number;
   allowedOrigins?: string[];
+  metricsToken?: string;
 }
 
 /** Starts a server and returns a function that connects a client to it. */
@@ -41,14 +43,12 @@ async function startServer(
 ): Promise<(headers?: Record<string, string>) => Promise<Client>> {
   server = createZipcallServer(
     {
+      ...loadConfig({}),
       port: 0,
-      forceHttps: false,
+      clientDir: "/nonexistent",
       trustProxy: options.trustProxy ?? 0,
       allowedOrigins: options.allowedOrigins ?? [],
-      maxConnectionsPerIp: 50,
-      twilio: null,
-      stunUrls: [],
-      clientDir: "/nonexistent",
+      metricsToken: options.metricsToken ?? null,
     },
     {
       logger: silentLogger,
@@ -337,5 +337,29 @@ describe("abuse limits", () => {
     for (let i = 0; i < 6; i++) alice.emit("candidate", CANDIDATE);
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(received).toBe(3);
+  });
+});
+
+describe("metrics", () => {
+  it("counts joins and calls", async () => {
+    const token = "metrics-token-for-tests";
+    const newClient = await startServer({ metricsToken: token });
+    const [alice, bob, carol] = await Promise.all([newClient(), newClient(), newClient()]);
+    await join(alice, "room");
+    await join(bob, "room");
+    await join(carol, "room");
+    alice.emit("candidate", CANDIDATE);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const response = await fetch(`${serverUrl}/metrics`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const text = await response.text();
+    expect(text).toContain('zipcall_joins_total{result="ok"} 2');
+    expect(text).toContain('zipcall_joins_total{result="room-full"} 1');
+    expect(text).toContain('zipcall_relayed_messages_total{type="candidate"} 1');
+    expect(text).toContain("zipcall_active_calls 1");
+    expect(text).toContain("zipcall_waiting_rooms 0");
+    expect(text).toContain("zipcall_connections 3");
   });
 });

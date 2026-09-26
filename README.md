@@ -47,6 +47,9 @@ Copy `.env.template` to `.env` and uncomment what you need. Every setting is opt
 | `TRUST_PROXY`                             | `0` (`1` on Heroku and with Docker Compose) | How many reverse proxies are in front of the app, so it can find visitors' real IP addresses.              |
 | `ALLOWED_ORIGINS`                         | none                                        | Other origins allowed to open signaling connections, if the web app is served elsewhere.                   |
 | `MAX_CONNECTIONS_PER_IP`                  | `50`                                        | Simultaneous signaling connections allowed from one public IP address.                                     |
+| `LOG_LEVEL`                               | `info`                                      | `debug`, `info`, `warn`, or `error`. `debug` also logs every request.                                      |
+| `LOG_FORMAT`                              | `json` in production, else `pretty`         | JSON lines for log collectors, or readable text.                                                           |
+| `METRICS_TOKEN`                           | unset (metrics off)                         | Serves Prometheus metrics at `/metrics` to requests with `Authorization: Bearer <token>`.                  |
 | `APP_PORT`, `APP_BIND`                    | `3000`, `127.0.0.1`                         | Docker Compose: where the app is published on the host.                                                    |
 | `DOMAIN`                                  | `localhost`                                 | Docker Compose `https` profile: the public hostname Caddy serves.                                          |
 

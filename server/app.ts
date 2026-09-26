@@ -1,4 +1,6 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import path from "node:path";
+import { performance } from "node:perf_hooks";
 import express, {
   type ErrorRequestHandler,
   type NextFunction,
@@ -7,14 +9,19 @@ import express, {
   type Response,
 } from "express";
 import type { Logger } from "./logger.ts";
+import type { MetricsRegistry } from "./metrics.ts";
 import { loadPage, type Page } from "./pages.ts";
 import { contentSecurityPolicy, securityHeaders } from "./security.ts";
+import { readVersion, type VersionInfo } from "./version.ts";
 
 export interface AppOptions {
   clientDir: string;
   forceHttps: boolean;
   trustProxy: number;
   logger: Logger;
+  version?: VersionInfo;
+  /** Serves /metrics to requests bearing `token`; omit to leave metrics off. */
+  metrics?: { registry: MetricsRegistry; token: string };
 }
 
 /**
@@ -39,6 +46,8 @@ export function createApp({
   forceHttps,
   trustProxy,
   logger,
+  version = readVersion(),
+  metrics,
 }: AppOptions): express.Express {
   const fallback = loadPage(path.join(clientDir, SPA_FALLBACK));
   if (fallback === null) {
@@ -51,12 +60,30 @@ export function createApp({
   app.disable("x-powered-by");
   // Lets req.ip and req.secure see through that many reverse proxies.
   app.set("trust proxy", trustProxy);
+  app.use(logRequests(logger));
   app.use(securityHeaders);
 
-  // Before the HTTPS redirect, so container health checks over plain HTTP pass.
+  // Before the HTTPS redirect, so container health checks and metrics
+  // scrapers on the internal network can use plain HTTP.
   app.get("/healthz", (_req, res) => {
-    res.json({ status: "ok" });
+    res.set("Cache-Control", "no-store").json({
+      status: "ok",
+      version: version.version,
+      revision: version.revision,
+      uptimeSeconds: Math.round(process.uptime()),
+    });
   });
+  if (metrics !== undefined) {
+    app.get("/metrics", (req, res) => {
+      if (!hasBearerToken(req.get("authorization"), metrics.token)) {
+        res.status(401).set("WWW-Authenticate", 'Bearer realm="metrics"').type("text");
+        res.send("A valid metrics token is required.");
+        return;
+      }
+      res.set("Cache-Control", "no-store").type("text/plain; version=0.0.4");
+      res.send(metrics.registry.render());
+    });
+  }
 
   if (forceHttps) app.use(redirectToHttps);
   app.use(removeTrailingSlash);
@@ -114,6 +141,29 @@ function sendPage(
     if (!indexable) res.set("X-Robots-Tag", "noindex, nofollow");
     res.send(page.html);
   };
+}
+
+/** Logs each request at debug level, with room names masked. */
+function logRequests(logger: Logger): RequestHandler {
+  return (req, res, next) => {
+    const started = performance.now();
+    res.on("finish", () => {
+      logger.debug("Request", {
+        method: req.method,
+        path: req.path.startsWith("/join/") ? "/join/:room" : req.path.slice(0, 200),
+        status: res.statusCode,
+        ms: Math.round(performance.now() - started),
+      });
+    });
+    next();
+  };
+}
+
+/** Compares in constant time, so response timing doesn't leak the token. */
+function hasBearerToken(header: string | undefined, token: string): boolean {
+  const presented = /^Bearer\s+(.+)$/i.exec(header ?? "")?.[1] ?? "";
+  const digest = (value: string) => createHash("sha256").update(value).digest();
+  return timingSafeEqual(digest(presented), digest(token));
 }
 
 function redirectToHttps(req: Request, res: Response, next: NextFunction): void {

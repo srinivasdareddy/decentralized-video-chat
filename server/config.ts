@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import type { LogFormat, LogLevel } from "./logger.ts";
 
 export interface TwilioCredentials {
   accountSid: string;
@@ -29,6 +30,11 @@ export interface Config {
   stunUrls: string[];
   /** Directory holding the built web client (`npm run build`). */
   clientDir: string;
+  logLevel: LogLevel;
+  /** JSON lines for log collectors (the default in production), or readable text. */
+  logFormat: LogFormat;
+  /** Bearer token for /metrics; null leaves metrics off. */
+  metricsToken: string | null;
 }
 
 export class ConfigError extends Error {
@@ -56,7 +62,32 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     twilio: parseTwilioCredentials(env),
     stunUrls: parseList(env.STUN_URLS) ?? DEFAULT_STUN_URLS,
     clientDir: DEFAULT_CLIENT_DIR,
+    logLevel: parseChoice("LOG_LEVEL", env.LOG_LEVEL, ["debug", "info", "warn", "error"]) ?? "info",
+    logFormat:
+      parseChoice("LOG_FORMAT", env.LOG_FORMAT, ["json", "pretty"]) ??
+      (env.NODE_ENV === "production" ? "json" : "pretty"),
+    metricsToken: parseMetricsToken(env.METRICS_TOKEN),
   };
+}
+
+function parseChoice<T extends string>(
+  name: string,
+  value: string | undefined,
+  choices: readonly T[],
+): T | undefined {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === undefined || normalized === "") return undefined;
+  if ((choices as readonly string[]).includes(normalized)) return normalized as T;
+  throw new ConfigError(`${name} must be one of ${choices.join(", ")}, got "${value}".`);
+}
+
+function parseMetricsToken(value: string | undefined): string | null {
+  const token = value?.trim();
+  if (token === undefined || token === "") return null;
+  if (token.length < 16) {
+    throw new ConfigError("METRICS_TOKEN must be at least 16 characters, so it can't be guessed.");
+  }
+  return token;
 }
 
 function parseInteger(

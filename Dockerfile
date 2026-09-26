@@ -19,8 +19,16 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 
 FROM node:${NODE_VERSION}-alpine
+# The source revision (e.g. a git commit), reported by /healthz and logs.
+ARG REVISION=""
+LABEL org.opencontainers.image.title="Zipcall" \
+      org.opencontainers.image.description="Peer-to-peer video calls in the browser" \
+      org.opencontainers.image.source="https://github.com/srinivasdareddy/decentralized-video-chat" \
+      org.opencontainers.image.licenses="CC-BY-NC-4.0" \
+      org.opencontainers.image.revision="${REVISION}"
 ENV NODE_ENV=production \
-    PORT=3000
+    PORT=3000 \
+    APP_REVISION=${REVISION}
 WORKDIR /app
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY package.json LICENSE ./

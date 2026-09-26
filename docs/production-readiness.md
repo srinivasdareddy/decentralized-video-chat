@@ -32,13 +32,17 @@ Each phase is one commit with its own tests, and this checklist is updated as ph
       can't guess their way into a waiting room.
 - [x] `npm audit` for production dependencies in CI.
 
-## Phase 2: Observability and operations
+## Phase 2: Observability and operations (done)
 
-- [ ] Structured JSON logs with levels (`LOG_LEVEL`, `LOG_FORMAT`).
-- [ ] Page request logging.
-- [ ] `/healthz` reports version and uptime; the Docker image knows its version.
-- [ ] Optional Prometheus metrics (connections, rooms, joins, relayed messages, TURN errors),
-      protected by a token.
+- [x] Structured logs with levels (`LOG_LEVEL`) as JSON lines in production or readable text in
+      development (`LOG_FORMAT`). Room names appear only as short hashes, so logs can follow a call
+      without revealing what people named it. Crashes are logged before exiting.
+- [x] Request logging at `debug` level, with call links masked.
+- [x] `/healthz` reports version, build revision, and uptime; the Docker image records its git
+      revision (`REVISION` build argument, OCI labels), which CI checks.
+- [x] Optional Prometheus metrics at `/metrics` (connections, waiting rooms, active calls, joins by
+      result, relayed and dropped messages, refused connections, TURN credential failures, memory),
+      only with `METRICS_TOKEN` and a matching bearer token.
 
 ## Phase 3: Self-hosted TURN
 
