@@ -36,9 +36,10 @@ describe("loadConfig", () => {
   });
 
   it("treats blank values as unset", () => {
-    expect(loadConfig({ PORT: "", TWILIO_ACCOUNT_SID: " ", TWILIO_AUTH_TOKEN: "" })).toMatchObject(
-      { port: 3000, twilio: null },
-    );
+    expect(loadConfig({ PORT: "", TWILIO_ACCOUNT_SID: " ", TWILIO_AUTH_TOKEN: "" })).toMatchObject({
+      port: 3000,
+      twilio: null,
+    });
   });
 
   it("validates PORT", () => {

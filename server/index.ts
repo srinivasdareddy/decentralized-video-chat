@@ -4,6 +4,15 @@ import { createZipcallServer } from "./server.ts";
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
 
+// Settings from .env, if there is one. Real environment variables win.
+// (Loaded here rather than with --env-file-if-exists, which breaks
+// `node --watch` when the file doesn't exist.)
+try {
+  process.loadEnvFile();
+} catch (error) {
+  if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+}
+
 let config: Config;
 try {
   config = loadConfig();

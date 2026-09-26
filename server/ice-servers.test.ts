@@ -1,10 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { IceServer } from "../shared/protocol.ts";
-import {
-  createCachedIceServerProvider,
-  normalizeIceServers,
-  stunServers,
-} from "./ice-servers.ts";
+import { createCachedIceServerProvider, normalizeIceServers, stunServers } from "./ice-servers.ts";
 import { silentLogger } from "./logger.ts";
 
 const TURN: IceServer[] = [{ urls: "turn:turn.example:3478", username: "u", credential: "c" }];

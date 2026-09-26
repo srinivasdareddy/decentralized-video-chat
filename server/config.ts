@@ -27,9 +27,7 @@ export class ConfigError extends Error {
 
 const DEFAULT_PORT = 3000;
 const DEFAULT_STUN_URLS = ["stun:stun.l.google.com:19302"];
-const DEFAULT_CLIENT_DIR = fileURLToPath(
-  new URL("../build/client", import.meta.url),
-);
+const DEFAULT_CLIENT_DIR = fileURLToPath(new URL("../build/client", import.meta.url));
 
 /** Reads the configuration from environment variables, failing fast on bad values. */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -77,11 +75,7 @@ function parseTwilioCredentials(env: NodeJS.ProcessEnv): TwilioCredentials | nul
     env.HEROKU_TWILLIO_SID,
     env.LOCAL_TWILLIO_SID,
   );
-  const authToken = firstSet(
-    env.TWILIO_AUTH_TOKEN,
-    env.HEROKU_AUTH_TOKEN,
-    env.LOCAL_AUTH_TOKEN,
-  );
+  const authToken = firstSet(env.TWILIO_AUTH_TOKEN, env.HEROKU_AUTH_TOKEN, env.LOCAL_AUTH_TOKEN);
   if (accountSid === undefined && authToken === undefined) return null;
   if (accountSid === undefined || authToken === undefined) {
     throw new ConfigError(
@@ -90,7 +84,7 @@ function parseTwilioCredentials(env: NodeJS.ProcessEnv): TwilioCredentials | nul
   }
   if (!/^AC[0-9a-f]{32}$/i.test(accountSid)) {
     throw new ConfigError(
-      "TWILIO_ACCOUNT_SID should be \"AC\" followed by 32 hexadecimal characters (see console.twilio.com).",
+      'TWILIO_ACCOUNT_SID should be "AC" followed by 32 hexadecimal characters (see console.twilio.com).',
     );
   }
   return { accountSid, authToken };

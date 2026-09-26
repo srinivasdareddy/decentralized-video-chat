@@ -1,0 +1,9 @@
+{
+  // Editors and `tsc -b` pick the right settings per file from these projects.
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" },
+    { "path": "./tsconfig.e2e.json" }
+  ]
+}

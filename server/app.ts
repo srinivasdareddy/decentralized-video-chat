@@ -83,13 +83,15 @@ export function createApp({ clientDir, forceHttps, logger }: AppOptions): expres
 function sendPage(clientDir: string, file: string, status = 200): RequestHandler {
   return (req, res, next) => {
     if (req.method !== "GET" && req.method !== "HEAD") return next();
-    res.status(status).sendFile(
-      path.join(clientDir, file),
-      { headers: { "Cache-Control": "no-cache" } },
-      (error) => {
-        if (error) next(error);
-      },
-    );
+    res
+      .status(status)
+      .sendFile(
+        path.join(clientDir, file),
+        { headers: { "Cache-Control": "no-cache" } },
+        (error) => {
+          if (error) next(error);
+        },
+      );
   };
 }
 
@@ -97,10 +99,7 @@ function securityHeaders(_req: Request, res: Response, next: NextFunction): void
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "SAMEORIGIN");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  res.setHeader(
-    "Permissions-Policy",
-    "camera=(self), microphone=(self), display-capture=(self)",
-  );
+  res.setHeader("Permissions-Policy", "camera=(self), microphone=(self), display-capture=(self)");
   next();
 }
 
@@ -131,10 +130,7 @@ function handleError(logger: Logger): ErrorRequestHandler {
   return (error: unknown, _req, res, next) => {
     if (res.headersSent) return next(error);
     if (isMissingFile(error)) {
-      res
-        .status(503)
-        .type("text")
-        .send('The web client has not been built. Run "npm run build".');
+      res.status(503).type("text").send('The web client has not been built. Run "npm run build".');
       return;
     }
     logger.error("Unhandled request error", error);

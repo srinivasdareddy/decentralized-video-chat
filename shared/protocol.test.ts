@@ -53,15 +53,11 @@ describe("payload validation", () => {
     expect(isSessionDescription(offer, "offer")).toBe(true);
     expect(isSessionDescription(offer, "answer")).toBe(false);
     expect(isSessionDescription({ type: "offer", sdp: 1 }, "offer")).toBe(false);
-    expect(isSessionDescription({ type: "offer", sdp: "x".repeat(70_000) }, "offer")).toBe(
-      false,
-    );
+    expect(isSessionDescription({ type: "offer", sdp: "x".repeat(70_000) }, "offer")).toBe(false);
   });
 
   it("accepts ICE candidates with nullable fields", () => {
-    expect(isIceCandidate({ candidate: "candidate:1", sdpMid: "0", sdpMLineIndex: 0 })).toBe(
-      true,
-    );
+    expect(isIceCandidate({ candidate: "candidate:1", sdpMid: "0", sdpMLineIndex: 0 })).toBe(true);
     expect(isIceCandidate({ candidate: "", sdpMid: null, sdpMLineIndex: null })).toBe(true);
     expect(isIceCandidate({ candidate: "candidate:1", sdpMLineIndex: "0" })).toBe(false);
     expect(isIceCandidate([])).toBe(false);

@@ -49,15 +49,9 @@ export interface JoinRequest {
   clientId: string;
 }
 
-export type JoinError =
-  | "invalid-request"
-  | "already-joined"
-  | "room-full"
-  | "server-error";
+export type JoinError = "invalid-request" | "already-joined" | "room-full" | "server-error";
 
-export type JoinResponse =
-  | { ok: true; iceServers: IceServer[] }
-  | { ok: false; error: JoinError };
+export type JoinResponse = { ok: true; iceServers: IceServer[] } | { ok: false; error: JoinError };
 
 export interface ClientToServerEvents {
   join: (request: JoinRequest, ack: (response: JoinResponse) => void) => void;
@@ -85,11 +79,7 @@ export function normalizeRoomName(name: string): string {
 }
 
 export function isValidRoomName(name: string): boolean {
-  return (
-    name.length > 0 &&
-    name.length <= ROOM_NAME_MAX_LENGTH &&
-    !ROOM_NAME_FORBIDDEN.test(name)
-  );
+  return name.length > 0 && name.length <= ROOM_NAME_MAX_LENGTH && !ROOM_NAME_FORBIDDEN.test(name);
 }
 
 /** Validates an untrusted join request and normalises its room name. */
