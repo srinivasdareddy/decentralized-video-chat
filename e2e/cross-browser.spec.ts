@@ -41,10 +41,11 @@ test("Chrome and Firefox can call each other", async ({ newPerson, baseURL, cspV
     await chrome.getByRole("textbox", { name: "Message" }).fill("Hello from Chrome");
     await chrome.keyboard.press("Enter");
     await firefoxPage.getByRole("button", { name: "Show chat (1 unread)" }).click();
-    await expect(firefoxPage.locator(".chat-message.is-peer")).toHaveText("Hello from Chrome");
+    // Messages start with a "Them:" label for screen readers.
+    await expect(firefoxPage.locator(".chat-message.is-peer")).toContainText("Hello from Chrome");
     await firefoxPage.getByRole("textbox", { name: "Message" }).fill("Hello from Firefox");
     await firefoxPage.keyboard.press("Enter");
-    await expect(chrome.locator(".chat-message.is-peer")).toHaveText("Hello from Firefox");
+    await expect(chrome.locator(".chat-message.is-peer")).toContainText("Hello from Firefox");
 
     // Mute state crosses over too.
     await firefoxPage.getByRole("button", { name: "Turn off microphone" }).click();
