@@ -73,12 +73,17 @@ Each phase is one commit with its own tests, and this checklist is updated as ph
       left alone after a server crash goes back to waiting; switching cameras keeps the video
       flowing and is remembered; shortcuts; the leave confirmation.
 
-## Phase 5: Polish
+## Phase 5: Polish (done)
 
-- [ ] Link-preview image with absolute URLs (`PUBLIC_URL`).
-- [ ] Web app manifest and icons.
-- [ ] Response compression.
-- [ ] Privacy page describing what data goes where.
+- [x] Link-preview card (1200 × 630) with an absolute URL, as crawlers need: from `PUBLIC_URL`, or
+      else the request's (validated) Host. Other sites may embed this image, and only this one.
+- [x] Web app manifest and icons (including maskable and Apple touch icons, and `favicon.ico`), so
+      the app can be installed; Chrome reports no manifest or installability errors. The images
+      are drawn from the logo by `npm run images`.
+- [x] Brotli and gzip compression for pages and assets when no proxy compresses them (the main
+      bundle goes from 215 KB to 67 KB).
+- [x] Privacy page, linked from the footer, describing what data goes where. The caption
+      indicator now also shows on phones, as the page promises.
 
 ## Phase 6: Maintenance automation
 

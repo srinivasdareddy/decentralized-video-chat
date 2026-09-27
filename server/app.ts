@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
+import compression from "compression";
 import express, {
   type ErrorRequestHandler,
   type NextFunction,
@@ -10,8 +11,8 @@ import express, {
 } from "express";
 import type { Logger } from "./logger.ts";
 import type { MetricsRegistry } from "./metrics.ts";
-import { loadPage, type Page } from "./pages.ts";
-import { contentSecurityPolicy, securityHeaders } from "./security.ts";
+import { loadPage, withAbsolutePreviewUrls, type Page } from "./pages.ts";
+import { contentSecurityPolicy, isSafeHost, securityHeaders } from "./security.ts";
 import { readVersion, type VersionInfo } from "./version.ts";
 
 export interface AppOptions {
@@ -22,15 +23,18 @@ export interface AppOptions {
   version?: VersionInfo;
   /** Serves /metrics to requests bearing `token`; omit to leave metrics off. */
   metrics?: { registry: MetricsRegistry; token: string };
+  /** The site's public origin for absolute URLs in link previews (see Config.publicUrl). */
+  publicUrl?: string | null;
 }
 
 /**
  * Pages that `react-router build` pre-renders to static HTML. Only the
- * landing and new call pages belong in search results.
+ * landing, new call, and privacy pages belong in search results.
  */
 const PAGES: Record<string, { file: string; indexable: boolean }> = {
   "/": { file: "index.html", indexable: true },
   "/newcall": { file: "newcall/index.html", indexable: true },
+  "/privacy": { file: "privacy/index.html", indexable: true },
   "/notsupported": { file: "notsupported/index.html", indexable: false },
   "/notsupportedios": { file: "notsupportedios/index.html", indexable: false },
 };
@@ -41,6 +45,9 @@ const SPA_FALLBACK = "__spa-fallback.html";
 /** Everything under assets/ has a content hash in its file name. */
 const IMMUTABLE_ASSETS = `${path.sep}assets${path.sep}`;
 
+/** The link-preview image, which other sites may show. */
+const PREVIEW_IMAGE = `${path.sep}og-image.png`;
+
 export function createApp({
   clientDir,
   forceHttps,
@@ -48,6 +55,7 @@ export function createApp({
   logger,
   version = readVersion(),
   metrics,
+  publicUrl = null,
 }: AppOptions): express.Express {
   const fallback = loadPage(path.join(clientDir, SPA_FALLBACK));
   if (fallback === null) {
@@ -62,6 +70,8 @@ export function createApp({
   app.set("trust proxy", trustProxy);
   app.use(logRequests(logger));
   app.use(securityHeaders);
+  // gzip or brotli for text responses, when a proxy in front doesn't already.
+  app.use(compression());
 
   // Before the HTTPS redirect, so container health checks and metrics
   // scrapers on the internal network can use plain HTTP.
@@ -104,17 +114,21 @@ export function createApp({
         if (filePath.includes(IMMUTABLE_ASSETS)) {
           res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
         }
+        // Chat apps may show the preview image on their own pages.
+        if (filePath.endsWith(PREVIEW_IMAGE)) {
+          res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+        }
       },
     }),
   );
 
   for (const [route, { file, indexable }] of Object.entries(PAGES)) {
-    app.get(route, sendPage(loadPage(path.join(clientDir, file)), { indexable }));
+    app.get(route, sendPage(loadPage(path.join(clientDir, file)), { indexable, publicUrl }));
   }
-  app.get("/join/:room", sendPage(fallback, { indexable: false }));
+  app.get("/join/:room", sendPage(fallback, { indexable: false, publicUrl }));
   // Unknown pages still get the app shell so the client can render its
   // "not found" page, but with the right status code.
-  app.use(sendPage(fallback, { indexable: false, status: 404 }));
+  app.use(sendPage(fallback, { indexable: false, publicUrl, status: 404 }));
   app.use(handleError(logger));
 
   return app;
@@ -122,7 +136,11 @@ export function createApp({
 
 function sendPage(
   page: Page | null,
-  { indexable, status = 200 }: { indexable: boolean; status?: number },
+  {
+    indexable,
+    publicUrl,
+    status = 200,
+  }: { indexable: boolean; publicUrl: string | null; status?: number },
 ): RequestHandler {
   return (req, res, next) => {
     if (req.method !== "GET" && req.method !== "HEAD") return next();
@@ -139,7 +157,9 @@ function sendPage(
       }),
     });
     if (!indexable) res.set("X-Robots-Tag", "noindex, nofollow");
-    res.send(page.html);
+    const host = req.get("host");
+    const origin = publicUrl ?? (isSafeHost(host) ? `${req.protocol}://${host}` : null);
+    res.send(origin === null ? page.html : withAbsolutePreviewUrls(page.html, origin));
   };
 }
 

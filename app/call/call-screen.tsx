@@ -269,9 +269,9 @@ export function CallScreen({ room }: { room: string }) {
           </span>
         </div>
         {call.transcribing && (
-          <span className="call-pill">
+          <span className="call-pill" title="Your speech is being transcribed for captions">
             <Captions size={14} aria-hidden="true" />
-            Captioning you
+            <span className="call-pill-label">Captioning you</span>
           </span>
         )}
         <CopyLinkButton

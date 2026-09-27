@@ -55,6 +55,7 @@ Copy `.env.template` to `.env` and uncomment what you need. Every setting is opt
 | `TURN_URLS`, `TURN_SECRET`                | unset                                       | Your own TURN server (such as coturn with `use-auth-secret`) instead of Twilio.                            |
 | `ICE_TRANSPORT_POLICY`                    | `all`                                       | `relay` sends all media through TURN so participants never see each other's IP addresses.                  |
 | `STUN_URLS`                               | `stun:stun.l.google.com:19302`              | Comma-separated STUN servers.                                                                              |
+| `PUBLIC_URL`                              | taken from each request                     | The site's address, like `https://call.example.com`, for the image in link previews.                       |
 | `PORT`                                    | `3000`                                      | Port for the web app and signaling server (not used with Docker Compose).                                  |
 | `FORCE_HTTPS`                             | `true` on Heroku, else `false`              | Redirect plain-HTTP requests to HTTPS behind a proxy that sets `X-Forwarded-Proto`.                        |
 | `TRUST_PROXY`                             | `0` (`1` on Heroku and with Docker Compose) | How many reverse proxies are in front of the app, so it can find visitors' real IP addresses.              |
@@ -91,6 +92,7 @@ server on port 3000, and restarts the server when you change it.
 | `npm test`         | Unit and integration tests (Vitest).                                |
 | `npm run test:e2e` | Browser tests with two fake cameras making real calls (Playwright). |
 | `npm run format`   | Format everything with Prettier.                                    |
+| `npm run images`   | Redraw the link-preview image and app icons in `public/`.           |
 
 The end-to-end tests need a browser the first time: `npx playwright install chromium`. They build
 the app and start a server themselves; set `E2E_BASE_URL` to test one that's already running, such

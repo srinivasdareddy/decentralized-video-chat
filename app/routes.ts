@@ -4,6 +4,7 @@ export default [
   layout("routes/marketing-layout.tsx", [
     index("routes/home.tsx"),
     route("newcall", "routes/new-call.tsx"),
+    route("privacy", "routes/privacy.tsx"),
     route("notsupported", "routes/not-supported.tsx"),
     route("notsupportedios", "routes/not-supported-ios.tsx"),
   ]),

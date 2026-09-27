@@ -133,6 +133,19 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ ICE_TRANSPORT_POLICY: "p2p" })).toThrow(ConfigError);
   });
 
+  it("reads the public URL as an origin", () => {
+    expect(loadConfig({}).publicUrl).toBeNull();
+    expect(loadConfig({ PUBLIC_URL: "https://call.example.com/" }).publicUrl).toBe(
+      "https://call.example.com",
+    );
+    expect(loadConfig({ PUBLIC_URL: " http://localhost:3000 " }).publicUrl).toBe(
+      "http://localhost:3000",
+    );
+    for (const value of ["call.example.com", "ftp://call.example.com", "https://x.example/app"]) {
+      expect(() => loadConfig({ PUBLIC_URL: value })).toThrow(ConfigError);
+    }
+  });
+
   it("parses a comma-separated STUN list", () => {
     expect(loadConfig({ STUN_URLS: "stun:a:3478, stun:b:3478" }).stunUrls).toEqual([
       "stun:a:3478",

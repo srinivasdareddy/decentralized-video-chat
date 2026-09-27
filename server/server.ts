@@ -50,6 +50,7 @@ export function createZipcallServer(
     logger,
     version,
     metrics: config.metricsToken === null ? undefined : { registry, token: config.metricsToken },
+    publicUrl: config.publicUrl,
   });
   const httpServer = http.createServer(app);
   const io: SignalingServer = new Server(httpServer, {

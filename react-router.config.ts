@@ -6,5 +6,5 @@ export default {
   ssr: false,
   // Static pages are rendered to HTML at build time for fast first loads and
   // link previews. Call pages (/join/:room) use the SPA fallback shell.
-  prerender: ["/", "/newcall", "/notsupported", "/notsupportedios"],
+  prerender: ["/", "/newcall", "/privacy", "/notsupported", "/notsupportedios"],
 } satisfies Config;

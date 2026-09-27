@@ -1,7 +1,7 @@
 {
-  // Server, shared protocol, tests, and tool configs. Node runs the .ts files
-  // directly (type stripping), so only erasable syntax is allowed and relative
-  // imports need their .ts extension.
+  // Server, shared protocol, tests, scripts, and tool configs. Node runs the
+  // .ts files directly (type stripping), so only erasable syntax is allowed
+  // and relative imports need their .ts extension.
   "compilerOptions": {
     "target": "ES2023",
     "lib": ["ES2023"],
@@ -19,5 +19,5 @@
     "noEmit": true,
     "tsBuildInfoFile": "node_modules/.tmp/tsconfig.node.tsbuildinfo"
   },
-  "include": ["server", "shared", "*.config.ts"]
+  "include": ["server", "shared", "scripts", "*.config.ts"]
 }

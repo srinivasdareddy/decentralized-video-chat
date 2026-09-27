@@ -9,14 +9,20 @@ import { createApp } from "./app.ts";
 import { silentLogger } from "./logger.ts";
 import { MetricsRegistry } from "./metrics.ts";
 
+const PREVIEW = '<meta property="og:image" content="/og-image.png"/>';
+
 const PAGES: Record<string, string> = {
   "index.html": "landing page<script>window.landing = true;</script>",
-  "newcall/index.html": "new call page",
+  "newcall/index.html": `new call page${PREVIEW}`,
+  "privacy/index.html": "privacy page",
   "notsupported/index.html": "not supported page",
   "notsupportedios/index.html": "not supported on iOS page",
   "__spa-fallback.html": "app shell",
   "assets/root-Ab12Cd.js": "console.log('hi')",
+  "assets/big-Ef34Gh.js": `console.log("${"compress me ".repeat(500)}")`,
   "images/logo.svg": "<svg></svg>",
+  "og-image.png": "png",
+  "manifest.webmanifest": "{}",
 };
 
 let clientDir: string;
@@ -43,6 +49,7 @@ async function start(
     dir?: string;
     trustProxy?: number;
     metrics?: { registry: MetricsRegistry; token: string };
+    publicUrl?: string;
   } = {},
 ) {
   const app = createApp({
@@ -52,6 +59,7 @@ async function start(
     logger: silentLogger,
     version: { version: "9.9.9", revision: "abc1234" },
     metrics: options.metrics,
+    publicUrl: options.publicUrl,
   });
   const listening = app.listen(0, "127.0.0.1");
   server = listening;
@@ -59,6 +67,24 @@ async function start(
   const { port } = listening.address() as AddressInfo;
   return (pathname: string, headers: Record<string, string> = {}) =>
     fetch(`http://127.0.0.1:${port}${pathname}`, { headers, redirect: "manual" });
+}
+
+/** GETs from the running server with a custom Host header, which fetch doesn't allow. */
+function getWithHost(
+  pathname: string,
+  headers: Record<string, string>,
+): Promise<{ headers: http.IncomingHttpHeaders; body: string }> {
+  const { port } = server?.address() as AddressInfo;
+  return new Promise((resolve, reject) => {
+    http
+      .get({ port, host: "127.0.0.1", path: pathname, headers }, (response) => {
+        let body = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk: string) => (body += chunk));
+        response.on("end", () => resolve({ headers: response.headers, body }));
+      })
+      .on("error", reject);
+  });
 }
 
 describe("web app", () => {
@@ -92,7 +118,7 @@ describe("web app", () => {
 
   it.each([
     ["/", "landing page<script>window.landing = true;</script>"],
-    ["/newcall", "new call page"],
+    ["/privacy", "privacy page"],
     ["/notsupported", "not supported page"],
     ["/notsupportedios", "not supported on iOS page"],
     ["/join/purple-squid", "app shell"],
@@ -124,6 +150,52 @@ describe("web app", () => {
     expect((await get("/notsupported")).headers.get("x-robots-tag")).toBe("noindex, nofollow");
     expect((await get("/")).headers.get("x-robots-tag")).toBeNull();
     expect((await get("/newcall")).headers.get("x-robots-tag")).toBeNull();
+    expect((await get("/privacy")).headers.get("x-robots-tag")).toBeNull();
+  });
+
+  it("gives link previews an absolute image URL", async () => {
+    await start();
+    expect((await getWithHost("/newcall", { host: "call.example:8080" })).body).toBe(
+      'new call page<meta property="og:image" content="http://call.example:8080/og-image.png"/>',
+    );
+    // A Host header that isn't a plain hostname is never echoed.
+    expect((await getWithHost("/newcall", { host: 'x"><script>' })).body).toContain(
+      'content="/og-image.png"',
+    );
+  });
+
+  it("uses the configured public URL for link previews", async () => {
+    await start({ publicUrl: "https://call.example.com" });
+    expect((await getWithHost("/newcall", { host: "other.example" })).body).toContain(
+      'content="https://call.example.com/og-image.png"',
+    );
+  });
+
+  it("lets other sites show the preview image, but nothing else", async () => {
+    const get = await start();
+    const image = await get("/og-image.png");
+    expect(image.headers.get("cross-origin-resource-policy")).toBe("cross-origin");
+    const other = await get("/images/logo.svg");
+    expect(other.headers.get("cross-origin-resource-policy")).toBe("same-origin");
+  });
+
+  it("compresses text responses for clients that accept it", async () => {
+    const get = await start();
+    for (const encoding of ["br", "gzip"]) {
+      const response = await get("/assets/big-Ef34Gh.js", { "accept-encoding": encoding });
+      expect(response.headers.get("content-encoding")).toBe(encoding);
+      expect(response.headers.get("vary")).toContain("Accept-Encoding");
+      expect(await response.text()).toContain("compress me");
+    }
+    const plain = await get("/assets/big-Ef34Gh.js", { "accept-encoding": "identity" });
+    expect(plain.headers.get("content-encoding")).toBeNull();
+  });
+
+  it("serves the web app manifest", async () => {
+    const get = await start();
+    const response = await get("/manifest.webmanifest");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toMatch(/^application\/manifest\+json/);
   });
 
   it("isolates the page from other sites' windows", async () => {
@@ -135,24 +207,10 @@ describe("web app", () => {
 
   it("sends HSTS only for HTTPS requests to real hosts, seen through a trusted proxy", async () => {
     const get = await start({ trustProxy: 1 });
-    const { port } = server?.address() as AddressInfo;
-    const hstsFor = (host: string, proto: string) =>
-      new Promise<string | undefined>((resolve, reject) => {
-        http
-          .get(
-            {
-              port,
-              host: "127.0.0.1",
-              path: "/",
-              headers: { host, "x-forwarded-proto": proto },
-            },
-            (response) => {
-              response.resume();
-              resolve(response.headers["strict-transport-security"]);
-            },
-          )
-          .on("error", reject);
-      });
+    const hstsFor = async (host: string, proto: string) =>
+      (await getWithHost("/", { host, "x-forwarded-proto": proto })).headers[
+        "strict-transport-security"
+      ];
     expect(await hstsFor("zipcall.example", "https")).toBe("max-age=31536000");
     expect(await hstsFor("zipcall.example", "http")).toBeUndefined();
     expect(await hstsFor("localhost:3000", "https")).toBeUndefined();

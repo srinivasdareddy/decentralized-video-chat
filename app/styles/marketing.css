@@ -66,6 +66,12 @@
   padding-bottom: 28px;
 }
 
+.site-footer-start {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
 .site-footer a {
   color: var(--color-text-muted);
   text-underline-offset: 3px;
@@ -252,6 +258,51 @@
   margin: 0 auto 28px;
 }
 
+/* Text pages, like the privacy page */
+
+.prose {
+  max-width: 720px;
+  padding-top: 72px;
+  padding-bottom: 96px;
+}
+
+.prose h1 {
+  font-size: clamp(32px, 5vw, 44px);
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.prose h2 {
+  margin-top: 44px;
+  font-size: 19px;
+  letter-spacing: -0.015em;
+}
+
+.prose p {
+  margin-top: 12px;
+  color: var(--color-text-muted);
+  font-size: 16px;
+  line-height: 1.65;
+}
+
+.prose .prose-lead {
+  margin-top: 16px;
+  color: var(--color-text);
+  font-size: 18px;
+}
+
+.prose .prose-note {
+  margin-top: 56px;
+  padding-top: 24px;
+  border-top: 1px solid var(--color-border);
+  font-size: 14px;
+}
+
+.prose a {
+  color: var(--color-text);
+  text-underline-offset: 3px;
+}
+
 /* New call form */
 
 .card {
@@ -366,7 +417,8 @@
     padding: 24px;
   }
 
-  .container.narrow {
+  .container.narrow,
+  .prose {
     padding-top: 40px;
   }
 }

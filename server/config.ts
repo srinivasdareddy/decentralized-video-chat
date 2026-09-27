@@ -48,6 +48,11 @@ export interface Config {
   logFormat: LogFormat;
   /** Bearer token for /metrics; null leaves metrics off. */
   metricsToken: string | null;
+  /**
+   * The site's public origin, e.g. https://call.example.com. Link previews
+   * need absolute URLs; without it they're built from each request's Host.
+   */
+  publicUrl: string | null;
 }
 
 export class ConfigError extends Error {
@@ -96,7 +101,27 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       parseChoice("LOG_FORMAT", env.LOG_FORMAT, ["json", "pretty"]) ??
       (env.NODE_ENV === "production" ? "json" : "pretty"),
     metricsToken: parseMetricsToken(env.METRICS_TOKEN),
+    publicUrl: parsePublicUrl(env.PUBLIC_URL),
   };
+}
+
+function parsePublicUrl(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  if (trimmed === undefined || trimmed === "") return null;
+  const url = URL.parse(trimmed);
+  if (
+    url === null ||
+    (url.protocol !== "https:" && url.protocol !== "http:") ||
+    url.pathname !== "/" ||
+    url.search !== "" ||
+    url.username !== "" ||
+    url.password !== ""
+  ) {
+    throw new ConfigError(
+      `PUBLIC_URL must be the site's address, like https://call.example.com, got "${value}".`,
+    );
+  }
+  return url.origin;
 }
 
 function parseChoice<T extends string>(

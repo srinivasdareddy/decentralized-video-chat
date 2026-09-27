@@ -18,8 +18,7 @@ export function contentSecurityPolicy({
 }): string {
   // 'self' covers same-origin WebSockets in current browsers; the explicit
   // entries are for older Safari, which doesn't match ws:/wss: to 'self'.
-  const connect =
-    host !== undefined && SAFE_HOST.test(host) ? `'self' wss://${host} ws://${host}` : "'self'";
+  const connect = isSafeHost(host) ? `'self' wss://${host} ws://${host}` : "'self'";
   return [
     "default-src 'self'",
     `script-src 'self' ${scriptHashes.join(" ")}`.trim(),
@@ -32,6 +31,11 @@ export function contentSecurityPolicy({
     "form-action 'self'",
     "frame-ancestors 'self'",
   ].join("; ");
+}
+
+/** Whether a Host header is a plain hostname or IP address (and port), safe to echo. */
+export function isSafeHost(host: string | undefined): host is string {
+  return host !== undefined && SAFE_HOST.test(host);
 }
 
 /** Headers for every response. */

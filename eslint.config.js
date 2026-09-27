@@ -28,7 +28,13 @@ export default defineConfig(
     languageOptions: { globals: globals.browser },
   },
   {
-    files: ["server/**/*.ts", "shared/**/*.ts", "e2e/**/*.ts", "*.config.{js,ts}"],
+    files: [
+      "server/**/*.ts",
+      "shared/**/*.ts",
+      "e2e/**/*.ts",
+      "scripts/**/*.ts",
+      "*.config.{js,ts}",
+    ],
     languageOptions: { globals: globals.node },
   },
 );
