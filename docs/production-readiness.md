@@ -12,7 +12,7 @@ Each phase is one commit with its own tests, and this checklist is updated as ph
 - Docker Compose deployment with optional automatic HTTPS (Caddy).
 - Unit, integration, and browser tests; CI for lint, typecheck, tests, and the Docker image.
 
-## Phase 0: Plan and CI on every push
+## Phase 0: Plan and CI on every push (done)
 
 - [x] CI runs on pushes to every branch (and manually), not only `master` and pull requests, so
       each phase is verified by GitHub Actions, including the Docker image build.
@@ -109,6 +109,16 @@ Each phase is one commit with its own tests, and this checklist is updated as ph
 
 ## Known limitations
 
+- Calls are for two people, by design.
 - Rooms live in the memory of a single server process, so run one instance. One Node process
   handles thousands of concurrent calls' signaling; scaling out would need a shared Socket.IO
   adapter and sticky sessions.
+- The signaling server relays each browser's encryption fingerprint when a call is set up, so the
+  server must be trusted not to intercept calls (as in most WebRTC apps; see
+  [SECURITY.md](../SECURITY.md)).
+- The bundled coturn offers TURN over UDP and TCP on port 3478, but not over TLS. The rare
+  networks that allow only HTTPS traffic can't reach it; Twilio's relays (which include port 443)
+  or coturn configured with a certificate on port 443 cover most of those.
+- Captions rely on the speaking person's browser having speech recognition (Chrome, Edge, and
+  Safari do; Firefox doesn't), and choosing a speaker needs `setSinkId`, which some browsers, such
+  as Safari on iOS, lack. The settings dialog leaves out the speaker choice there.

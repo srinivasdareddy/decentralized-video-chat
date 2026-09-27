@@ -93,7 +93,7 @@ server on port 3000, and restarts the server when you change it.
 | `npm start`        | Serve the built client and run the signaling server.                |
 | `npm run check`    | Formatting, lint, typecheck, and unit tests; run before committing. |
 | `npm test`         | Unit and integration tests (Vitest).                                |
-| `npm run test:e2e` | Browser tests with two fake cameras making real calls (Playwright). |
+| `npm run test:e2e` | Browser tests: real calls between fake cameras (Playwright).        |
 | `npm run format`   | Format everything with Prettier.                                    |
 | `npm run images`   | Redraw the link-preview image and app icons in `public/`.           |
 
@@ -119,10 +119,12 @@ app/                  Web client: React 19 + React Router 8 (pre-rendered pages,
                       from losing the server mid-call
     local-media.ts    Camera, microphone, and screen sharing
     peer-messages.ts  Messages sent over the data channel (chat, captions, mute state)
-  routes/             Pages: landing, new call, call, unsupported browser
+  routes/             Pages: landing, new call, call, privacy, unsupported browser
 server/               Express 5 + Socket.IO signaling server, run directly by Node (no build step)
 shared/protocol.ts    Signaling messages and validation shared by the client and the server
 e2e/                  Playwright end-to-end tests
+scripts/              Draws the link-preview image and icons in public/
+docs/                 Deployment guide and the production-readiness plan
 ```
 
 ## Deploying elsewhere
