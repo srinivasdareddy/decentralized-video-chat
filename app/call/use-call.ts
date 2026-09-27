@@ -1,4 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import {
+  loadDevicePreferences,
+  saveDevicePreference,
+  type DeviceChoice,
+} from "../lib/device-preferences";
 import { useStore } from "../lib/store";
 import { CallSession, INITIAL_CALL_STATE, type CallNotice } from "./call-session";
 import { INITIAL_MEDIA_STATE, LocalMedia } from "./local-media";
@@ -16,7 +21,7 @@ export function useCall(room: string) {
   const [session, setSession] = useState<Session | null>(null);
 
   useEffect(() => {
-    const media = new LocalMedia();
+    const media = new LocalMedia(loadDevicePreferences());
     const call = new CallSession({ room, media });
     // The session wraps browser resources, so it's created here rather than
     // during render, and exposed once it exists.
@@ -47,6 +52,18 @@ export function useCall(room: string) {
       },
       toggleCamera(): void {
         session?.media.toggleCamera();
+      },
+      /** Resolves to false if the camera couldn't be opened. */
+      async switchCamera(device: DeviceChoice): Promise<boolean> {
+        const switched = (await session?.media.switchCamera(device.deviceId)) ?? false;
+        if (switched) saveDevicePreference("camera", device);
+        return switched;
+      },
+      /** Resolves to false if the microphone couldn't be opened. */
+      async switchMicrophone(device: DeviceChoice): Promise<boolean> {
+        const switched = (await session?.media.switchMicrophone(device.deviceId)) ?? false;
+        if (switched) saveDevicePreference("microphone", device);
+        return switched;
       },
       /** Resolves to false if sharing couldn't start. */
       async toggleScreenShare(): Promise<boolean> {

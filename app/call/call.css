@@ -212,6 +212,29 @@
   transform: translateX(-50%);
 }
 
+.stage-banner {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: 8px 14px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  font-size: 14px;
+  transform: translateX(-50%);
+}
+
+.stage-banner svg {
+  flex: none;
+  color: var(--color-warning);
+}
+
 .sound-button {
   position: absolute;
   top: 16px;
@@ -518,6 +541,20 @@
   opacity: 0.6;
 }
 
+/* Settings */
+
+.settings-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.settings-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 /* Toasts */
 
 .toast-viewport {
@@ -610,5 +647,30 @@
 
   .toast-viewport {
     bottom: 76px;
+  }
+
+  /* Beside the self-view rather than over it. */
+  .stage-banner {
+    top: 12px;
+    left: 12px;
+    max-width: calc(68% - 36px);
+    transform: none;
+  }
+}
+
+/* Narrow phones: keep every control on screen. */
+@media (max-width: 400px) {
+  .control-bar {
+    gap: 4px;
+    padding: 4px;
+  }
+
+  .control {
+    width: 36px;
+    height: 36px;
+  }
+
+  .control-leave {
+    width: 48px;
   }
 }

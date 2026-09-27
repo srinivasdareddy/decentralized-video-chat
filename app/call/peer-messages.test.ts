@@ -13,6 +13,8 @@ describe("peer messages", () => {
     { type: "captions-request", enabled: true },
     { type: "captions-unavailable" },
     { type: "media-state", audio: false, video: true },
+    { type: "ping" },
+    { type: "pong" },
   ])("round-trips %j", (message) => {
     expect(decodePeerMessage(encodePeerMessage(message))).toEqual(message);
   });

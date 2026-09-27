@@ -55,13 +55,23 @@ Each phase is one commit with its own tests, and this checklist is updated as ph
 - [x] Verified with a real coturn: CI runs the whole browser suite with every call forced through
       the relay, and a test checks the connection's selected candidates are relays.
 
-## Phase 4: Call robustness and UX
+## Phase 4: Call robustness and UX (done)
 
-- [ ] Choose camera, microphone, and speaker, remembered between calls.
-- [ ] Keep the screen awake during a call.
-- [ ] Confirm before closing the tab mid-call.
-- [ ] Show when the browser is offline.
-- [ ] Browser tests for surviving a signaling reconnect mid-call and for switching devices.
+- [x] Calls don't depend on the signaling server once connected. If either person loses their
+      connection to the server, or the server restarts (a deploy, a crash), the call carries on and
+      both quietly rejoin the room. When the server says the other person left but the call is
+      still up, the browser asks them directly over the data channel before ending the call.
+- [x] Joining can't race: a join completes before the other person is asked to call, and the join
+      reply says whether someone is already there.
+- [x] Choose camera, microphone, and speaker mid-call without renegotiating, remembered between
+      calls (by device name too, since browsers may change device ids between visits).
+- [x] Keyboard shortcuts for the microphone (Ctrl/⌘+D) and camera (Ctrl/⌘+E), shown in tooltips.
+- [x] The screen stays awake during a call.
+- [x] Closing the tab mid-call asks first, and so does going back (with an in-page dialog).
+- [x] An offline notice while the browser has no network.
+- [x] Browser tests: a call survives a graceful server restart without being set up again; someone
+      left alone after a server crash goes back to waiting; switching cameras keeps the video
+      flowing and is remembered; shortcuts; the leave confirmation.
 
 ## Phase 5: Polish
 

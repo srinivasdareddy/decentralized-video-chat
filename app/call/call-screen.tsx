@@ -1,17 +1,24 @@
-import { Captions, Check, Link2, MicOff, User, Volume2 } from "lucide-react";
+import { Captions, Check, Link2, MicOff, User, Volume2, WifiOff } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useBlocker, useNavigate } from "react-router";
+import { Dialog } from "../components/dialog";
 import { LogoMark } from "../components/logo";
 import { MessagePanel } from "../components/message-panel";
 import { ToastViewport, useToast } from "../components/toasts";
 import { copyText } from "../lib/clipboard";
+import type { DeviceChoice } from "../lib/device-preferences";
+import { SHORTCUT_KEYS, shortcutKey } from "../lib/shortcuts";
 import { useIdle } from "../lib/use-idle";
+import { useOnline } from "../lib/use-online";
+import { useWakeLock } from "../lib/use-wake-lock";
 import type { CallNotice, CallState, CallStatus } from "./call-session";
 import { ChatPanel } from "./chat-panel";
 import { ControlBar } from "./control-bar";
 import type { LocalMediaState, MediaProblem } from "./local-media";
 import { SelfView } from "./self-view";
+import { SettingsDialog } from "./settings-dialog";
 import { useCall } from "./use-call";
+import { useSpeaker } from "./use-speaker";
 import { useVideoStream } from "./use-video-stream";
 
 const NOTICES: Record<Exclude<CallNotice["type"], "message">, string> = {
@@ -75,11 +82,48 @@ export function CallScreen({ room }: { room: string }) {
   const [chatOpen, setChatOpen] = useState(false);
   const [lastReadId, setLastReadId] = useState(0);
   const [soundBlocked, setSoundBlocked] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const leavingRef = useRef(false);
+  const online = useOnline();
   const callLink = `${window.location.origin}/join/${encodeURIComponent(room)}`;
+  const inCall = call.status === "connected" || call.status === "reconnecting";
 
   const onPlaybackBlocked = useCallback(() => setSoundBlocked(true), []);
   useVideoStream(remoteVideoRef, call.remoteStream, onPlaybackBlocked);
+  useWakeLock(inCall);
+  const { speakerId, selectSpeaker } = useSpeaker(remoteVideoRef, call.remoteStream);
+
+  // Ask before closing or reloading the tab mid-call...
+  useEffect(() => {
+    if (!inCall) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [inCall]);
+
+  // ...and before going back to another page, except with the Leave button.
+  const leaveBlocker = useBlocker(
+    useCallback(
+      ({ currentLocation, nextLocation }) =>
+        inCall && !leavingRef.current && currentLocation.pathname !== nextLocation.pathname,
+      [inCall],
+    ),
+  );
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const key = shortcutKey(event);
+      if (key !== SHORTCUT_KEYS.microphone && key !== SHORTCUT_KEYS.camera) return;
+      // These would otherwise bookmark the page or focus the address bar.
+      event.preventDefault();
+      if (event.repeat) return;
+      if (key === SHORTCUT_KEYS.microphone) actions.toggleMicrophone();
+      else actions.toggleCamera();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [actions]);
 
   // Read by the notice listener, which outlives individual renders.
   const chatOpenRef = useRef(chatOpen);
@@ -142,7 +186,6 @@ export function CallScreen({ room }: { room: string }) {
     );
   }
 
-  const inCall = call.status === "connected" || call.status === "reconnecting";
   const showRemoteVideo = inCall && call.remoteStream !== null && call.peerVideoOn;
   const unreadMessages = chatOpen
     ? 0
@@ -185,8 +228,25 @@ export function CallScreen({ room }: { room: string }) {
     }
   };
 
+  const selectCamera = (device: DeviceChoice) => {
+    void actions.switchCamera(device).then((switched) => {
+      if (!switched) showToast("Couldn't switch to that camera.");
+    });
+  };
+
+  const selectMicrophone = (device: DeviceChoice) => {
+    void actions.switchMicrophone(device).then((switched) => {
+      if (!switched) showToast("Couldn't switch to that microphone.");
+    });
+  };
+
+  const leave = () => {
+    leavingRef.current = true;
+    void navigate("/newcall");
+  };
+
   const status = STATUS[call.status];
-  const hideChrome = idle && call.status === "connected" && !chatOpen;
+  const hideChrome = idle && call.status === "connected" && !chatOpen && !settingsOpen;
 
   return (
     <div className={`call${hideChrome ? " is-idle" : ""}`}>
@@ -230,6 +290,12 @@ export function CallScreen({ room }: { room: string }) {
             playsInline
           />
           <StageOverlay media={media} call={call} callLink={callLink} />
+          {!online && (
+            <p className="stage-banner" role="status">
+              <WifiOff size={16} aria-hidden="true" />
+              You're offline. The call will reconnect when you're back online.
+            </p>
+          )}
           {inCall && !call.peerAudioOn && (
             <span className="stage-badge">
               <MicOff size={14} aria-hidden="true" />
@@ -269,7 +335,8 @@ export function CallScreen({ room }: { room: string }) {
             onToggleCaptions={toggleCaptions}
             onPictureInPicture={() => void togglePictureInPicture()}
             onToggleChat={toggleChat}
-            onLeave={() => void navigate("/newcall")}
+            onOpenSettings={() => setSettingsOpen(true)}
+            onLeave={leave}
           />
         </main>
         {chatOpen && (
@@ -281,6 +348,40 @@ export function CallScreen({ room }: { room: string }) {
           />
         )}
       </div>
+      <SettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        cameraId={media.cameraId}
+        microphoneId={media.microphoneId}
+        speakerId={speakerId}
+        onSelectCamera={selectCamera}
+        onSelectMicrophone={selectMicrophone}
+        onSelectSpeaker={selectSpeaker}
+      />
+      <Dialog
+        open={leaveBlocker.state === "blocked"}
+        title="Leave the call?"
+        onClose={() => leaveBlocker.reset?.()}
+      >
+        <p className="dialog-text">Going back will end your call.</p>
+        <div className="dialog-actions">
+          <button
+            type="button"
+            className="button button-secondary"
+            onClick={() => leaveBlocker.reset?.()}
+            data-autofocus
+          >
+            Stay
+          </button>
+          <button
+            type="button"
+            className="button button-danger"
+            onClick={() => leaveBlocker.proceed?.()}
+          >
+            Leave call
+          </button>
+        </div>
+      </Dialog>
       <ToastViewport toast={toast} />
     </div>
   );

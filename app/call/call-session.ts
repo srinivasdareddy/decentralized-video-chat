@@ -84,6 +84,8 @@ const JOIN_RETRY_MS = 2_000;
 const RECOVERY_GRACE_MS = 8_000;
 /** Start over if a connection attempt hasn't succeeded by then. */
 const CONNECT_TIMEOUT_MS = 20_000;
+/** How long the other person has to answer "are you still there?". */
+const PEER_CHECK_TIMEOUT_MS = 2_000;
 const CAPTION_HIDE_MS = 4_000;
 const MAX_PENDING_CANDIDATES = 200;
 const MAX_MESSAGES = 500;
@@ -105,6 +107,10 @@ const CLIENT_ID =
  * side answers. When the connection fails, the initiator starts over with a
  * fresh RTCPeerConnection instead of reloading the page, so chat history
  * and local media survive network changes.
+ *
+ * Once connected, the call doesn't depend on the server: if either side
+ * loses its connection to the server (or the server restarts), the call
+ * carries on and both sides quietly rejoin the room.
  */
 export class CallSession {
   readonly store = new Store<CallState>(INITIAL_CALL_STATE);
@@ -119,6 +125,8 @@ export class CallSession {
   #started = false;
   #disposed = false;
   #joined = false;
+  /** Whether the other person is in the room, as far as the server last said. */
+  #peerPresent = false;
   #iceServers: IceServer[] = [];
   #iceTransportPolicy: RTCIceTransportPolicy = "all";
   #initiator = false;
@@ -134,6 +142,7 @@ export class CallSession {
   #connectTimer: ReturnType<typeof setTimeout> | undefined;
   #captionTimer: ReturnType<typeof setTimeout> | undefined;
   #joinRetryTimer: ReturnType<typeof setTimeout> | undefined;
+  #peerCheckTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor({
     room,
@@ -178,6 +187,7 @@ export class CallSession {
     for (const cleanup of this.#cleanups) cleanup();
     clearTimeout(this.#captionTimer);
     clearTimeout(this.#joinRetryTimer);
+    clearTimeout(this.#peerCheckTimer);
     this.#noticeListeners.clear();
   }
 
@@ -239,12 +249,17 @@ export class CallSession {
     this.#iceServers = response.iceServers;
     this.#iceTransportPolicy = response.iceTransportPolicy ?? "all";
     this.#joined = true;
+    this.#peerPresent = response.peerPresent;
     const offer = this.#pendingOffer;
     this.#pendingOffer = null;
     if (offer !== null) {
       void this.#answer(offer);
     } else if (this.#pc === null) {
-      this.store.set({ status: "waiting" });
+      // Someone already here sends an offer next.
+      this.store.set({ status: response.peerPresent ? "connecting" : "waiting" });
+    } else if (!response.peerPresent && !this.#callIsUp()) {
+      // They left while we were reconnecting to the server.
+      this.#endCall();
     }
   }
 
@@ -269,11 +284,32 @@ export class CallSession {
 
   #onPeerJoined = (): void => {
     if (!this.#joined) return;
+    this.#peerPresent = true;
     this.#initiator = true;
-    void this.#makeOffer();
+    clearTimeout(this.#peerCheckTimer);
+    // With the call still up, this is the other person rejoining after
+    // losing their connection to the server; the call carries on.
+    if (!this.#callIsUp()) void this.#makeOffer();
   };
 
   #onPeerLeft = (): void => {
+    this.#peerPresent = false;
+    if (!this.#callIsUp()) {
+      this.#endCall();
+      return;
+    }
+    // They may only have lost their connection to the server. The call
+    // itself still works, so ask them directly whether they're still here.
+    this.#send({ type: "ping" });
+    clearTimeout(this.#peerCheckTimer);
+    this.#peerCheckTimer = setTimeout(() => {
+      if (!this.#peerPresent) this.#endCall();
+    }, PEER_CHECK_TIMEOUT_MS);
+  };
+
+  /** The other person has gone: wait for someone to join. */
+  #endCall(): void {
+    clearTimeout(this.#peerCheckTimer);
     this.#closePeerConnection();
     this.#pendingOffer = null;
     this.#pendingCandidates = [];
@@ -290,7 +326,12 @@ export class CallSession {
       slowToConnect: false,
     });
     this.#emitNotice({ type: "peer-left" });
-  };
+  }
+
+  /** Whether we're connected to the other person right now, server or not. */
+  #callIsUp(): boolean {
+    return this.#pc?.connectionState === "connected" && this.#channel?.readyState === "open";
+  }
 
   #onOffer = (description: unknown): void => {
     if (!isSessionDescription(description, "offer")) return;
@@ -435,7 +476,10 @@ export class CallSession {
 
   /** Starts over with a fresh connection; the other side waits for our offer. */
   #restart(): void {
-    if (this.#initiator && this.#joined && !this.#disposed) void this.#makeOffer();
+    if (this.#disposed) return;
+    // Nobody to reconnect to if they've left the room.
+    if (!this.#peerPresent) this.#endCall();
+    else if (this.#initiator && this.#joined) void this.#makeOffer();
   }
 
   #closePeerConnection(): void {
@@ -479,7 +523,15 @@ export class CallSession {
       if (this.store.get().captionsOn) this.#send({ type: "captions-request", enabled: true });
     };
     channel.onclose = () => {
-      if (channel === this.#channel) this.store.set({ peerChannelOpen: false });
+      if (channel !== this.#channel) return;
+      // The other side closed the connection: they left, reloaded the page,
+      // or are starting over.
+      const { status } = this.store.get();
+      this.store.set({
+        peerChannelOpen: false,
+        status: status === "connected" ? "reconnecting" : status,
+      });
+      this.#restart();
     };
     channel.onmessage = ({ data }: MessageEvent) => {
       if (channel !== this.#channel) return;
@@ -510,6 +562,12 @@ export class CallSession {
         break;
       case "media-state":
         this.store.set({ peerAudioOn: message.audio, peerVideoOn: message.video });
+        break;
+      case "ping":
+        this.#send({ type: "pong" });
+        break;
+      case "pong":
+        clearTimeout(this.#peerCheckTimer);
         break;
     }
   }

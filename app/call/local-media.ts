@@ -1,3 +1,4 @@
+import { findDevice, type DevicePreferences } from "../lib/device-preferences";
 import { Store } from "../lib/store";
 
 export type MediaProblem =
@@ -13,6 +14,9 @@ export interface LocalMediaState {
   micOn: boolean;
   cameraOn: boolean;
   sharingScreen: boolean;
+  /** The devices in use, as reported by the browser. */
+  cameraId: string | null;
+  microphoneId: string | null;
 }
 
 export const INITIAL_MEDIA_STATE: LocalMediaState = {
@@ -24,17 +28,30 @@ export const INITIAL_MEDIA_STATE: LocalMediaState = {
   micOn: false,
   cameraOn: false,
   sharingScreen: false,
+  cameraId: null,
+  microphoneId: null,
 };
 
 export type TrackKind = "audio" | "video";
 type TrackListener = (kind: TrackKind, track: MediaStreamTrack | null) => void;
 
 const AUDIO: MediaTrackConstraints = { echoCancellation: true, noiseSuppression: true };
-const CAMERA: MediaTrackConstraints = {
-  facingMode: "user",
-  width: { ideal: 1280 },
-  height: { ideal: 720 },
-};
+const CAMERA: MediaTrackConstraints = { width: { ideal: 1280 }, height: { ideal: 720 } };
+
+/** A particular microphone, or else the default one. */
+function microphoneConstraints(deviceId?: string | null): MediaTrackConstraints {
+  return deviceId == null ? AUDIO : { ...AUDIO, deviceId: { exact: deviceId } };
+}
+
+/** A particular camera, or else the front one. */
+function cameraConstraints(deviceId?: string | null): MediaTrackConstraints {
+  return deviceId == null
+    ? { ...CAMERA, facingMode: "user" }
+    : { ...CAMERA, deviceId: { exact: deviceId } };
+}
+
+const constraintsFor = (kind: TrackKind, deviceId?: string | null) =>
+  kind === "audio" ? microphoneConstraints(deviceId) : cameraConstraints(deviceId);
 
 /**
  * The local camera, microphone, and screen share. Tells listeners whenever
@@ -47,7 +64,13 @@ export class LocalMedia {
   #camera: MediaStreamTrack | null = null;
   #screen: MediaStreamTrack | null = null;
   readonly #listeners = new Set<TrackListener>();
+  readonly #preferred: Pick<DevicePreferences, "camera" | "microphone">;
   #disposed = false;
+
+  /** `preferred`: devices chosen before, used if they're still there. */
+  constructor(preferred: Pick<DevicePreferences, "camera" | "microphone"> = {}) {
+    this.#preferred = preferred;
+  }
 
   /** Asks for the camera and microphone. Resolves to whether the call can go ahead. */
   async start(): Promise<boolean> {
@@ -63,7 +86,7 @@ export class LocalMedia {
     this.store.set({ status: "requesting", problem: null });
     let stream: MediaStream;
     try {
-      stream = await requestCameraAndMicrophone();
+      stream = await requestCameraAndMicrophone(await this.#findPreferredDevices());
     } catch (error) {
       if (!this.#disposed) this.store.set({ status: "failed", problem: describeProblem(error) });
       return false;
@@ -83,8 +106,81 @@ export class LocalMedia {
       micOn: this.#microphone !== null,
       cameraOn: this.#camera !== null,
       preview: previewOf(this.#camera),
+      cameraId: deviceIdOf(this.#camera),
+      microphoneId: deviceIdOf(this.#microphone),
     });
     return true;
+  }
+
+  async #findPreferredDevices(): Promise<{ cameraId?: string; microphoneId?: string }> {
+    const { camera, microphone } = this.#preferred;
+    if (camera === undefined && microphone === undefined) return {};
+    const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+    return {
+      cameraId: findDevice(devices, "videoinput", camera),
+      microphoneId: findDevice(devices, "audioinput", microphone),
+    };
+  }
+
+  /** Switches to another camera. Resolves to false if it couldn't be opened. */
+  switchCamera(deviceId: string): Promise<boolean> {
+    return this.#switchDevice("video", deviceId);
+  }
+
+  /** Switches to another microphone. Resolves to false if it couldn't be opened. */
+  switchMicrophone(deviceId: string): Promise<boolean> {
+    return this.#switchDevice("audio", deviceId);
+  }
+
+  async #switchDevice(kind: TrackKind, deviceId: string): Promise<boolean> {
+    const current = kind === "audio" ? this.#microphone : this.#camera;
+    if (this.#disposed || deviceIdOf(current) === deviceId) return true;
+    const open = (id: string | null) =>
+      navigator.mediaDevices.getUserMedia({ [kind]: constraintsFor(kind, id) }).then(
+        (stream) => stream.getTracks()[0] ?? null,
+        () => null,
+      );
+
+    // Stop the current device first: phones can't open two cameras at once.
+    current?.stop();
+    let track = await open(deviceId);
+    // If the new device fails, go back to the one we had.
+    track ??= await open(deviceIdOf(current));
+    if (this.#disposed) {
+      track?.stop();
+      return false;
+    }
+    if (track !== null) {
+      track.enabled = current?.enabled ?? true;
+      this.#watchForLoss(track);
+    }
+    this.#adopt(kind, track);
+    return deviceIdOf(track) === deviceId;
+  }
+
+  /** Makes `track` the current device of its kind and tells the call. */
+  #adopt(kind: TrackKind, track: MediaStreamTrack | null): void {
+    if (kind === "audio") {
+      this.#microphone = track;
+      this.store.set({
+        hasMicrophone: track !== null,
+        micOn: track?.enabled ?? false,
+        microphoneId: deviceIdOf(track),
+      });
+      this.#emit("audio", track);
+      return;
+    }
+    this.#camera = track;
+    this.store.set({
+      hasCamera: track !== null,
+      cameraOn: track?.enabled ?? false,
+      cameraId: deviceIdOf(track),
+    });
+    // While sharing the screen, the camera takes over again when sharing stops.
+    if (this.#screen === null) {
+      this.store.set({ preview: previewOf(track) });
+      this.#emit("video", track);
+    }
   }
 
   outgoingTrack(kind: TrackKind): MediaStreamTrack | null {
@@ -171,9 +267,7 @@ export class LocalMedia {
 
     let replacement: MediaStreamTrack | null = null;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia(
-        kind === "audio" ? { audio: AUDIO } : { video: CAMERA },
-      );
+      const stream = await navigator.mediaDevices.getUserMedia({ [kind]: constraintsFor(kind) });
       replacement = stream.getTracks()[0] ?? null;
     } catch {
       // No other device available; carry on without this one.
@@ -188,42 +282,48 @@ export class LocalMedia {
       replacement.enabled = lost.enabled;
       this.#watchForLoss(replacement);
     }
-    if (kind === "audio") {
-      this.#microphone = replacement;
-      this.store.set({
-        hasMicrophone: replacement !== null,
-        micOn: replacement?.enabled ?? false,
-      });
-      this.#emit("audio", replacement);
-    } else {
-      this.#camera = replacement;
-      this.store.set({
-        hasCamera: replacement !== null,
-        cameraOn: replacement?.enabled ?? false,
-      });
-      if (this.#screen === null) {
-        this.store.set({ preview: previewOf(replacement) });
-        this.#emit("video", replacement);
-      }
-    }
+    this.#adopt(kind, replacement);
   }
 }
 
-/** Camera and microphone, falling back to whichever one is available. */
-async function requestCameraAndMicrophone(): Promise<MediaStream> {
+/**
+ * Camera and microphone: the chosen devices if they're still there, else the
+ * defaults, falling back to whichever one is available.
+ */
+async function requestCameraAndMicrophone(preferred: {
+  cameraId?: string;
+  microphoneId?: string;
+}): Promise<MediaStream> {
   const getUserMedia = (constraints: MediaStreamConstraints) =>
     navigator.mediaDevices.getUserMedia(constraints);
+  // Asked for exactly: browsers may pass over a device that's only "ideal".
+  if (preferred.cameraId !== undefined || preferred.microphoneId !== undefined) {
+    try {
+      return await getUserMedia({
+        audio: microphoneConstraints(preferred.microphoneId),
+        video: cameraConstraints(preferred.cameraId),
+      });
+    } catch (error) {
+      if (!canFallBack(error)) throw error;
+    }
+  }
+  const audio = microphoneConstraints();
+  const video = cameraConstraints();
   try {
-    return await getUserMedia({ audio: AUDIO, video: CAMERA });
+    return await getUserMedia({ audio, video });
   } catch (error) {
     if (!canFallBack(error)) throw error;
   }
   try {
-    return await getUserMedia({ audio: AUDIO });
+    return await getUserMedia({ audio });
   } catch (error) {
     if (!canFallBack(error)) throw error;
   }
-  return getUserMedia({ video: CAMERA });
+  return getUserMedia({ video });
+}
+
+function deviceIdOf(track: MediaStreamTrack | null): string | null {
+  return track?.getSettings().deviceId ?? null;
 }
 
 /** Missing or busy devices; a permission refusal is final. */

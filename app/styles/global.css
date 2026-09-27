@@ -164,6 +164,15 @@ button {
   background: var(--color-surface-raised);
 }
 
+.button-danger {
+  background: var(--color-danger);
+  color: #fff;
+}
+
+.button-danger:hover:not(:disabled) {
+  background: var(--color-danger-hover);
+}
+
 .button-small {
   height: 36px;
   padding: 0 14px;
@@ -207,6 +216,99 @@ button {
   outline: none;
   border-color: var(--color-accent);
   box-shadow: 0 0 0 3px rgb(110 155 255 / 0.25);
+}
+
+/* A select styled like a text input, with its own arrow */
+
+.select {
+  position: relative;
+}
+
+.select-input {
+  padding-right: 40px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  appearance: none;
+  cursor: pointer;
+}
+
+.select-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.select-chevron {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  color: var(--color-text-muted);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+/* Dialogs */
+
+.dialog {
+  width: min(420px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-overlay);
+}
+
+.dialog::backdrop {
+  background: rgb(0 0 0 / 0.6);
+}
+
+.dialog-panel {
+  padding: 8px 20px 20px;
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  margin: 0 -12px 8px 0;
+}
+
+.dialog-title {
+  font-size: 17px;
+}
+
+.dialog-close {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+}
+
+.dialog-close:hover {
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+}
+
+.dialog-text {
+  color: var(--color-text-muted);
+  font-size: 15px;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 24px;
 }
 
 /* Centred notices: errors, unsupported browsers, full calls */

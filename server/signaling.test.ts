@@ -1,5 +1,5 @@
 import type { AddressInfo } from "node:net";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { io as connect, type Socket } from "socket.io-client";
 import type {
   ClientToServerEvents,
@@ -129,13 +129,47 @@ describe("signaling", () => {
     const alice = await newClient();
     const bob = await newClient();
 
-    expect(await join(alice, "room")).toEqual({ ok: true, iceServers: ICE_SERVERS });
+    expect(await join(alice, "room")).toEqual({
+      ok: true,
+      iceServers: ICE_SERVERS,
+      peerPresent: false,
+    });
     const aliceIsAsked = nextEvent(alice, "peer-joined");
     const bobIsAsked = receives(bob, "peer-joined");
-    expect(await join(bob, "room")).toEqual({ ok: true, iceServers: ICE_SERVERS });
+    expect(await join(bob, "room")).toEqual({
+      ok: true,
+      iceServers: ICE_SERVERS,
+      peerPresent: true,
+    });
 
     await aliceIsAsked;
     expect(await bobIsAsked).toBe(false);
+  });
+
+  it("finishes a join before telling the other person about it", async () => {
+    // Alice's TURN credentials are slow to arrive. If she were in the room
+    // meanwhile, Bob's arrival would ask her to call him before her own join
+    // had finished, and each would wait for the other.
+    let releaseAlice = () => {};
+    const aliceWaits = new Promise<void>((resolve) => (releaseAlice = resolve));
+    let lookups = 0;
+    const newClient = await startServer({
+      getIceServers: async () => {
+        if (++lookups === 1) await aliceWaits;
+        return ICE_SERVERS;
+      },
+    });
+    const alice = await newClient();
+    const bob = await newClient();
+
+    const aliceJoined = join(alice, "room");
+    await vi.waitFor(() => expect(lookups).toBe(1));
+    expect(await join(bob, "room")).toMatchObject({ ok: true, peerPresent: false });
+
+    const bobIsAsked = nextEvent(bob, "peer-joined");
+    releaseAlice();
+    expect(await aliceJoined).toMatchObject({ ok: true, peerPresent: true });
+    await bobIsAsked;
   });
 
   it("treats room names case-insensitively", async () => {
@@ -348,6 +382,7 @@ describe("relay-only calls", () => {
     expect(await join(await newClient(), "room")).toEqual({
       ok: true,
       iceServers: ICE_SERVERS,
+      peerPresent: false,
       iceTransportPolicy: "relay",
     });
   });

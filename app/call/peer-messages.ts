@@ -10,7 +10,10 @@ export type PeerMessage =
   /** Ask the other person to start or stop sending captions of their speech. */
   | { type: "captions-request"; enabled: boolean }
   | { type: "captions-unavailable" }
-  | { type: "media-state"; audio: boolean; video: boolean };
+  | { type: "media-state"; audio: boolean; video: boolean }
+  /** "Are you still there?", answered with a pong. */
+  | { type: "ping" }
+  | { type: "pong" };
 
 export const CHAT_MESSAGE_MAX_LENGTH = 2000;
 const CAPTION_MAX_LENGTH = 300;
@@ -50,6 +53,9 @@ export function decodePeerMessage(data: unknown): PeerMessage | null {
       return typeof message.audio === "boolean" && typeof message.video === "boolean"
         ? { type: "media-state", audio: message.audio, video: message.video }
         : null;
+    case "ping":
+    case "pong":
+      return { type: message.type };
     default:
       return null;
   }

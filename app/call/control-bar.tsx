@@ -6,10 +6,12 @@ import {
   MonitorUp,
   PhoneOff,
   PictureInPicture2,
+  Settings,
   Video,
   VideoOff,
   type LucideIcon,
 } from "lucide-react";
+import { SHORTCUT_KEYS, shortcutAria, shortcutLabel } from "../lib/shortcuts";
 import type { LocalMediaState } from "./local-media";
 
 export interface ControlBarProps {
@@ -26,6 +28,7 @@ export interface ControlBarProps {
   onToggleCaptions: () => void;
   onPictureInPicture: () => void;
   onToggleChat: () => void;
+  onOpenSettings: () => void;
   onLeave: () => void;
 }
 
@@ -41,6 +44,7 @@ export function ControlBar(props: ControlBarProps) {
         label={micOn ? "Turn off microphone" : "Turn on microphone"}
         tone={micOn ? "default" : "off"}
         disabled={!media.hasMicrophone}
+        shortcut={SHORTCUT_KEYS.microphone}
         onClick={props.onToggleMicrophone}
       />
       <ControlButton
@@ -48,6 +52,7 @@ export function ControlBar(props: ControlBarProps) {
         label={cameraOn ? "Turn off camera" : "Turn on camera"}
         tone={cameraOn ? "default" : "off"}
         disabled={!media.hasCamera}
+        shortcut={SHORTCUT_KEYS.camera}
         onClick={props.onToggleCamera}
       />
       {props.canShareScreen && (
@@ -80,6 +85,7 @@ export function ControlBar(props: ControlBarProps) {
         badge={props.chatOpen ? 0 : props.unreadMessages}
         onClick={props.onToggleChat}
       />
+      <ControlButton icon={Settings} label="Settings" onClick={props.onOpenSettings} />
       <button
         type="button"
         className="control control-leave"
@@ -99,6 +105,7 @@ function ControlButton({
   tone = "default",
   disabled = false,
   badge = 0,
+  shortcut,
   onClick,
 }: {
   icon: LucideIcon;
@@ -106,6 +113,8 @@ function ControlButton({
   tone?: "default" | "off" | "active";
   disabled?: boolean;
   badge?: number;
+  /** Pressed with Ctrl or ⌘. */
+  shortcut?: string;
   onClick: () => void;
 }) {
   return (
@@ -115,7 +124,8 @@ function ControlButton({
       onClick={onClick}
       disabled={disabled}
       aria-label={badge > 0 ? `${label} (${badge} unread)` : label}
-      data-tooltip={label}
+      aria-keyshortcuts={shortcut === undefined ? undefined : shortcutAria(shortcut)}
+      data-tooltip={shortcut === undefined ? label : `${label} (${shortcutLabel(shortcut)})`}
     >
       <Icon size={20} aria-hidden="true" />
       {badge > 0 && <span className="control-badge">{badge > 9 ? "9+" : badge}</span>}

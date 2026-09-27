@@ -8,9 +8,11 @@ downloads, no accounts.
 - **Peer-to-peer:** audio, video, and chat go directly between browsers over WebRTC whenever the
   network allows.
 - **Everything a call needs:** screen sharing, chat with clickable links, live captions, picture in
-  picture, and microphone and camera controls.
-- **Resilient:** calls recover from network drops without reloading the page, and a replaced
-  camera or headset is picked up automatically.
+  picture, a choice of camera, microphone, and speaker (remembered between calls), and keyboard
+  shortcuts: Ctrl+D (⌘D on a Mac) for the microphone and Ctrl+E (⌘E) for the camera.
+- **Resilient:** calls recover from network drops without reloading the page, carry on while the
+  server restarts, and pick up a replaced camera or headset automatically. Closing the tab or
+  going back mid-call asks first.
 - **Private by default:** each call has its own link for two people, and nothing is stored.
 
 ## Run it with Docker Compose
@@ -105,7 +107,8 @@ DTLS-SRTP. The server never sees the media.
 ```text
 app/                  Web client: React 19 + React Router 8 (pre-rendered pages, SPA call page)
   call/               The call screen
-    call-session.ts   Signaling and the WebRTC connection, including recovery from drops
+    call-session.ts   Signaling and the WebRTC connection, including recovery from drops and
+                      from losing the server mid-call
     local-media.ts    Camera, microphone, and screen sharing
     peer-messages.ts  Messages sent over the data channel (chat, captions, mute state)
   routes/             Pages: landing, new call, call, unsupported browser

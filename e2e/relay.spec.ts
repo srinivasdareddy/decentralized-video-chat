@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "./fixtures.ts";
+import { trackPeerConnections } from "./helpers.ts";
 
 // Needs a server started with ICE_TRANSPORT_POLICY=relay and a TURN server
 // (TURN_URLS, TURN_SECRET); CI runs the whole suite that way in a separate job.
@@ -7,21 +8,6 @@ test.skip(
   process.env.ICE_TRANSPORT_POLICY !== "relay",
   "Set ICE_TRANSPORT_POLICY=relay and a TURN server to run relay tests",
 );
-
-/** Keeps a reference to every RTCPeerConnection the page creates. */
-async function trackPeerConnections(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    const tracked: RTCPeerConnection[] = [];
-    Object.assign(window, { __peerConnections: tracked });
-    const Native = window.RTCPeerConnection;
-    window.RTCPeerConnection = class extends Native {
-      constructor(configuration?: RTCConfiguration) {
-        super(configuration);
-        tracked.push(this);
-      }
-    };
-  });
-}
 
 /** The candidate types of the connection's selected path, e.g. ["relay", "relay"]. */
 function selectedCandidateTypes(page: Page): Promise<string[]> {

@@ -12,9 +12,11 @@ export default defineConfig({
     baseURL,
     trace: "retain-on-failure",
     permissions: ["camera", "microphone"],
-    // A synthetic camera and microphone, so calls work without hardware.
+    // Synthetic cameras and microphones, so calls work without hardware.
+    // (Of the three fake cameras, fake_device_1 imitates a depth camera,
+    // which can't be sent in a call; tests switch between the other two.)
     launchOptions: {
-      args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"],
+      args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream=device-count=3"],
     },
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],

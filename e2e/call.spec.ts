@@ -1,27 +1,5 @@
-import type { Page } from "@playwright/test";
 import { expect, test } from "./fixtures.ts";
-
-let roomCounter = 0;
-/** A room name no other test (or earlier run) uses. */
-function uniqueRoom(): string {
-  return `e2e-${process.pid}-${Date.now()}-${++roomCounter}`;
-}
-
-async function join(newPerson: () => Promise<Page>, room: string): Promise<Page> {
-  const page = await newPerson();
-  await page.goto(`/join/${room}`);
-  return page;
-}
-
-async function expectConnected(page: Page): Promise<void> {
-  await expect(page.locator(".call-status")).toHaveText("Connected", { timeout: 20_000 });
-  // Real frames from the other side are rendering.
-  await expect
-    .poll(() =>
-      page.locator(".remote-video").evaluate((video: HTMLVideoElement) => video.videoWidth),
-    )
-    .toBeGreaterThan(0);
-}
+import { expectConnected, join, uniqueRoom } from "./helpers.ts";
 
 test("two people can join a call, see each other, and chat", async ({ newPerson }) => {
   const room = uniqueRoom();

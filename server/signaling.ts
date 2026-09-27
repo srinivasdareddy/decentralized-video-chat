@@ -218,8 +218,16 @@ async function handleJoin(
     return;
   }
 
-  // Everything up to the first `await` runs without interruption, so the
-  // capacity check and the join can't race with another connection.
+  // Fetched before joining, so that from the capacity check to the replies
+  // nothing awaits and another join can't interleave. (Otherwise the other
+  // person could be told to call someone whose join hasn't finished.)
+  const iceServers = await getIceServers();
+  if (socket.disconnected) return;
+  if (socket.data.room !== undefined) {
+    reply({ ok: false, error: "already-joined" });
+    return;
+  }
+
   const { room, clientId } = request;
   const members = roomMembers(io, room);
   for (const member of members) {
@@ -243,16 +251,15 @@ async function handleJoin(
   void socket.join(room);
   logger.info("Joined a call", { room: roomTag(room), participants: others.length + 1 });
 
-  const iceServers = await getIceServers();
-  if (socket.disconnected) return;
+  const peerPresent = others.length > 0;
   reply(
     iceTransportPolicy === "relay"
-      ? { ok: true, iceServers, iceTransportPolicy }
-      : { ok: true, iceServers },
+      ? { ok: true, iceServers, peerPresent, iceTransportPolicy }
+      : { ok: true, iceServers, peerPresent },
   );
   // Sent after the reply so the newcomer is ready before the offer arrives.
   // Whoever was already waiting starts the call.
-  if (others.length > 0) socket.to(room).emit("peer-joined");
+  if (peerPresent) socket.to(room).emit("peer-joined");
 }
 
 function roomMembers(io: SignalingServer, room: string): SignalingSocket[] {

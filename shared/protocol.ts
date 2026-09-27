@@ -61,6 +61,8 @@ export type JoinResponse =
   | {
       ok: true;
       iceServers: IceServer[];
+      /** Whether the other person is already in the room (and will send an offer). */
+      peerPresent: boolean;
       /** "relay": use only TURN, so neither side sees the other's IP address. */
       iceTransportPolicy?: "relay";
     }
@@ -74,9 +76,13 @@ export interface ClientToServerEvents {
 }
 
 export interface ServerToClientEvents {
-  /** Another person joined the room; the recipient should send an offer. */
+  /**
+   * Another person joined the room; the recipient starts the call with an
+   * offer. (If its call is still up, it's the same person reconnecting to the
+   * server, and the call just carries on.)
+   */
   "peer-joined": () => void;
-  /** The other person left the room. */
+  /** The other person left the room, or lost their connection to the server. */
   "peer-left": () => void;
   offer: (description: SessionDescription) => void;
   answer: (description: SessionDescription) => void;
