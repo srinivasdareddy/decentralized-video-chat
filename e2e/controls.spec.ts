@@ -75,9 +75,13 @@ test("going back mid-call asks before leaving", async ({ newPerson }) => {
   await expectConnected(alice);
 
   const confirm = alice.getByRole("dialog", { name: "Leave the call?" });
-  await alice.evaluate(() => history.back());
-  await confirm.getByRole("button", { name: "Stay" }).click();
-  await expect(confirm).toBeHidden();
+  // Every time, even going back again the moment the dialog closes (the
+  // dialog's close event arrives late, and once cancelled the next one).
+  for (let round = 0; round < 5; round++) {
+    await alice.evaluate(() => history.back());
+    await confirm.getByRole("button", { name: "Stay" }).click();
+    await expect(confirm).toBeHidden();
+  }
   await expect(alice).toHaveURL(new RegExp(`/join/${room}$`));
   await expect(alice.locator(".call-status")).toHaveText("Connected");
 

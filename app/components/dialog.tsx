@@ -35,7 +35,11 @@ export function Dialog({
       ref={dialogRef}
       className="dialog"
       aria-labelledby={titleId}
-      onClose={onClose}
+      onClose={(event) => {
+        // "close" also follows our own close(), a moment later, when the
+        // dialog may already be open again: only report a dialog that's shut.
+        if (!event.currentTarget.open) onClose();
+      }}
       onClick={(event) => {
         // The panel fills the dialog, so a click on the dialog itself is on the backdrop.
         if (event.target === event.currentTarget) onClose();
