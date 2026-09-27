@@ -39,11 +39,14 @@ WebSocket upgrades, to port 3000.
 For callers behind strict firewalls, run your own TURN relay with the `turn` profile. Set
 `TURN_SECRET` (a long random string), `TURN_URLS` (for example
 `turn:call.example.com:3478?transport=udp,turn:call.example.com:3478?transport=tcp`) and, on most
-cloud servers, `TURN_EXTERNAL_IP` in `.env`, and open UDP/TCP 3478 and UDP 49160–49200:
+cloud servers, `TURN_EXTERNAL_IP` in `.env`, and open UDP/TCP 3478 and UDP 49152–65535:
 
 ```sh
 docker compose --profile https --profile turn up -d
 ```
+
+Going live? [docs/deployment.md](docs/deployment.md) covers firewall ports, a checklist, upgrades
+(calls carry on while the app restarts), monitoring, logs, and capacity.
 
 ## Configuration
 
@@ -125,7 +128,16 @@ e2e/                  Playwright end-to-end tests
 ## Deploying elsewhere
 
 Any host that runs Node.js 22.22 or newer works: run `npm ci && npm run build`, then `npm start`.
-On Heroku the build runs automatically and HTTPS redirects are on by default.
+On Heroku the build runs automatically and HTTPS redirects are on by default. See
+[Other ways to host it](docs/deployment.md#other-ways-to-host-it) for reverse proxies and
+platforms.
+
+## Security and privacy
+
+Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md), which also summarizes
+how calls are protected. The privacy page (`/privacy`) explains what data goes where.
+[docs/production-readiness.md](docs/production-readiness.md) tracks the production work, and
+[CHANGELOG.md](CHANGELOG.md) lists what changed in each version.
 
 ## Credits and license
 

@@ -11,7 +11,8 @@
 #   docker compose --profile https --profile turn up -d
 #     Also starts a TURN relay (coturn) for callers behind strict firewalls.
 #     Needs TURN_SECRET, TURN_URLS and, on most cloud servers,
-#     TURN_EXTERNAL_IP in .env; open UDP/TCP 3478 and UDP 49160-49200.
+#     TURN_EXTERNAL_IP in .env; open UDP/TCP 3478 and UDP 49152-65535
+#     (or the TURN_MIN_PORT-TURN_MAX_PORT range you set).
 #
 # Settings come from .env; see .env.template.
 name: zipcall
@@ -72,6 +73,10 @@ services:
       TURN_SECRET: ${TURN_SECRET:-}
       TURN_REALM: ${TURN_REALM:-zipcall}
       TURN_EXTERNAL_IP: ${TURN_EXTERNAL_IP:-}
+      # Each relayed call uses a few ports from this range (one per browser
+      # and TURN URL), so it bounds how many calls can be relayed at once.
+      TURN_MIN_PORT: ${TURN_MIN_PORT:-49152}
+      TURN_MAX_PORT: ${TURN_MAX_PORT:-65535}
     # Refuses to start without a secret: an empty one would let anyone
     # mint credentials and use the relay.
     entrypoint:
@@ -86,7 +91,7 @@ services:
           --use-auth-secret --static-auth-secret="$$TURN_SECRET" \
           --realm="$$TURN_REALM" \
           $${TURN_EXTERNAL_IP:+--external-ip="$$TURN_EXTERNAL_IP"} \
-          --listening-port=3478 --min-port=49160 --max-port=49200 \
+          --listening-port=3478 --min-port="$$TURN_MIN_PORT" --max-port="$$TURN_MAX_PORT" \
           --fingerprint --no-cli --no-tls --no-dtls --no-multicast-peers \
           --denied-peer-ip=0.0.0.0-0.255.255.255 \
           --denied-peer-ip=10.0.0.0-10.255.255.255 \

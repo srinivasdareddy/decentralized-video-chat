@@ -96,10 +96,16 @@ Each phase is one commit with its own tests, and this checklist is updated as ph
 - [x] The Docker image runs the browser suite in CI, not just a health check.
 - [x] CI jobs have timeouts, and `.nvmrc` pins the Node.js version for contributors.
 
-## Phase 7: Documentation
+## Phase 7: Documentation (done)
 
-- [ ] Production deployment guide.
-- [ ] Security policy.
+- [x] [Production deployment guide](deployment.md): server and firewall requirements, setup, a
+      go-live checklist, upgrades, monitoring with suggested alerts, logs, backups, capacity, and
+      other hosting options.
+- [x] [Security policy](../SECURITY.md): private reporting, supported versions, scope, and how
+      calls are protected, including the trust placed in the signaling server.
+- [x] [Changelog](../CHANGELOG.md) with notes for upgrading from 1.x.
+- [x] Writing the guide showed the bundled TURN relay's port range (41 ports) would cap relayed
+      calls at about ten at once; it's now 49152–65535 by default and configurable.
 
 ## Known limitations
 
