@@ -7,7 +7,10 @@ import { expectConnected, join, uniqueRoom } from "./helpers.ts";
 test.skip(!fs.existsSync(firefox.executablePath()), "Firefox isn't installed");
 
 test("Chrome and Firefox can call each other", async ({ newPerson, baseURL, cspViolations }) => {
+  // The test runner applies playwright.config.ts's options to every browser
+  // and context, including this one: override the Chromium-only ones.
   const browser = await firefox.launch({
+    args: [],
     firefoxUserPrefs: {
       // A synthetic camera and microphone, allowed without asking.
       "media.navigator.streams.fake": true,
@@ -17,7 +20,13 @@ test("Chrome and Firefox can call each other", async ({ newPerson, baseURL, cspV
     },
   });
   try {
-    const context = await browser.newContext({ baseURL });
+    const context = await browser.newContext({
+      baseURL,
+      // Firefox has no camera permission to grant; the prefs above allow it.
+      permissions: [],
+      // Firefox's own user agent, not the Desktop Chrome profile's.
+      userAgent: undefined,
+    });
     await recordViolations(context, cspViolations);
     const room = uniqueRoom();
     const chrome = await join(newPerson, room);
