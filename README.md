@@ -94,9 +94,12 @@ server on port 3000, and restarts the server when you change it.
 | `npm run format`   | Format everything with Prettier.                                    |
 | `npm run images`   | Redraw the link-preview image and app icons in `public/`.           |
 
-The end-to-end tests need a browser the first time: `npx playwright install chromium`. They build
-the app and start a server themselves; set `E2E_BASE_URL` to test one that's already running, such
-as the Docker container.
+The end-to-end tests need a browser the first time: `npx playwright install chromium` (add
+`firefox` to include the Chrome-to-Firefox call test). They build the app and start a server
+themselves; set `E2E_BASE_URL` to test one that's already running, such as the Docker container.
+
+CI runs all of this on every push, and again through a real TURN relay and against the Docker
+image. Dependabot proposes grouped dependency updates weekly.
 
 ## How it works
 

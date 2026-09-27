@@ -85,10 +85,16 @@ Each phase is one commit with its own tests, and this checklist is updated as ph
 - [x] Privacy page, linked from the footer, describing what data goes where. The caption
       indicator now also shows on phones, as the page promises.
 
-## Phase 6: Maintenance automation
+## Phase 6: Maintenance automation (done)
 
-- [ ] Dependabot for npm, GitHub Actions, and Docker base images, grouped weekly.
-- [ ] Cross-browser call test (Chromium to Firefox), if Firefox can run in CI.
+- [x] Dependabot, weekly: npm (minor and patch updates grouped by production and development
+      dependencies; majors one at a time), GitHub Actions (grouped), the Node.js base image, and
+      the Caddy and coturn images in Docker Compose. Deliberate majors (Node.js, `@types/node`) are
+      left to people. The config validates against the published schema.
+- [x] Cross-browser call test: Chrome and Firefox call each other, chat both ways, and see each
+      other's mute state, with Firefox's pages also checked for Content-Security-Policy violations.
+- [x] The Docker image runs the browser suite in CI, not just a health check.
+- [x] CI jobs have timeouts, and `.nvmrc` pins the Node.js version for contributors.
 
 ## Phase 7: Documentation
 

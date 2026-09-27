@@ -11,7 +11,10 @@ interface Fixtures {
  * Reports every policy violation to the test, even from pages that have
  * since navigated away.
  */
-async function recordViolations(context: BrowserContext, violations: string[]): Promise<void> {
+export async function recordViolations(
+  context: BrowserContext,
+  violations: string[],
+): Promise<void> {
   await context.exposeBinding("__reportCspViolation", (_source, violation: string) => {
     violations.push(violation);
   });
