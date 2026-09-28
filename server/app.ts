@@ -1,0 +1,218 @@
+import { createHash, timingSafeEqual } from "node:crypto";
+import path from "node:path";
+import { performance } from "node:perf_hooks";
+import compression from "compression";
+import express, {
+  type ErrorRequestHandler,
+  type NextFunction,
+  type Request,
+  type RequestHandler,
+  type Response,
+} from "express";
+import type { Logger } from "./logger.ts";
+import type { MetricsRegistry } from "./metrics.ts";
+import { loadPage, withAbsolutePreviewUrls, type Page } from "./pages.ts";
+import { contentSecurityPolicy, isSafeHost, securityHeaders } from "./security.ts";
+import { readVersion, type VersionInfo } from "./version.ts";
+
+export interface AppOptions {
+  clientDir: string;
+  forceHttps: boolean;
+  trustProxy: number;
+  logger: Logger;
+  version?: VersionInfo;
+  /** Serves /metrics to requests bearing `token`; omit to leave metrics off. */
+  metrics?: { registry: MetricsRegistry; token: string };
+  /** The site's public origin for absolute URLs in link previews (see Config.publicUrl). */
+  publicUrl?: string | null;
+}
+
+/**
+ * Pages that `react-router build` pre-renders to static HTML. Only the
+ * landing, new call, and privacy pages belong in search results.
+ */
+const PAGES: Record<string, { file: string; indexable: boolean }> = {
+  "/": { file: "index.html", indexable: true },
+  "/newcall": { file: "newcall/index.html", indexable: true },
+  "/privacy": { file: "privacy/index.html", indexable: true },
+  "/notsupported": { file: "notsupported/index.html", indexable: false },
+  "/notsupportedios": { file: "notsupportedios/index.html", indexable: false },
+};
+
+/** Shell that boots the client-side router for every other route. */
+const SPA_FALLBACK = "__spa-fallback.html";
+
+/** Everything under assets/ has a content hash in its file name. */
+const IMMUTABLE_ASSETS = `${path.sep}assets${path.sep}`;
+
+/** The link-preview image, which other sites may show. */
+const PREVIEW_IMAGE = `${path.sep}og-image.png`;
+
+export function createApp({
+  clientDir,
+  forceHttps,
+  trustProxy,
+  logger,
+  version = readVersion(),
+  metrics,
+  publicUrl = null,
+}: AppOptions): express.Express {
+  const fallback = loadPage(path.join(clientDir, SPA_FALLBACK));
+  if (fallback === null) {
+    logger.warn(
+      `The web client has not been built (${clientDir} is missing). Run "npm run build", or use "npm run dev" during development.`,
+    );
+  }
+
+  const app = express();
+  app.disable("x-powered-by");
+  // Lets req.ip and req.secure see through that many reverse proxies.
+  app.set("trust proxy", trustProxy);
+  app.use(logRequests(logger));
+  app.use(securityHeaders);
+  // gzip or brotli for text responses, when a proxy in front doesn't already.
+  app.use(compression());
+
+  // Before the HTTPS redirect, so container health checks and metrics
+  // scrapers on the internal network can use plain HTTP.
+  app.get("/healthz", (_req, res) => {
+    res.set("Cache-Control", "no-store").json({
+      status: "ok",
+      version: version.version,
+      revision: version.revision,
+      uptimeSeconds: Math.round(process.uptime()),
+    });
+  });
+  if (metrics !== undefined) {
+    app.get("/metrics", (req, res) => {
+      if (!hasBearerToken(req.get("authorization"), metrics.token)) {
+        res.status(401).set("WWW-Authenticate", 'Bearer realm="metrics"').type("text");
+        res.send("A valid metrics token is required.");
+        return;
+      }
+      res.set("Cache-Control", "no-store").type("text/plain; version=0.0.4");
+      res.send(metrics.registry.render());
+    });
+  }
+
+  if (forceHttps) app.use(redirectToHttps);
+  app.use(removeTrailingSlash);
+
+  app.get("/join", (_req, res) => res.redirect("/newcall"));
+  // Keep shared call links clean, e.g. drop tracking parameters.
+  app.get("/join/:room", (req, res, next) => {
+    const queryStart = req.originalUrl.indexOf("?");
+    if (queryStart === -1) return next();
+    res.redirect(req.originalUrl.slice(0, queryStart));
+  });
+
+  app.use(
+    express.static(clientDir, {
+      index: false,
+      redirect: false,
+      setHeaders: (res, filePath) => {
+        if (filePath.includes(IMMUTABLE_ASSETS)) {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        }
+        // Chat apps may show the preview image on their own pages.
+        if (filePath.endsWith(PREVIEW_IMAGE)) {
+          res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+        }
+      },
+    }),
+  );
+
+  for (const [route, { file, indexable }] of Object.entries(PAGES)) {
+    app.get(route, sendPage(loadPage(path.join(clientDir, file)), { indexable, publicUrl }));
+  }
+  app.get("/join/:room", sendPage(fallback, { indexable: false, publicUrl }));
+  // Unknown pages still get the app shell so the client can render its
+  // "not found" page, but with the right status code.
+  app.use(sendPage(fallback, { indexable: false, publicUrl, status: 404 }));
+  app.use(handleError(logger));
+
+  return app;
+}
+
+function sendPage(
+  page: Page | null,
+  {
+    indexable,
+    publicUrl,
+    status = 200,
+  }: { indexable: boolean; publicUrl: string | null; status?: number },
+): RequestHandler {
+  return (req, res, next) => {
+    if (req.method !== "GET" && req.method !== "HEAD") return next();
+    if (page === null) {
+      res.status(503).type("text").send('The web client has not been built. Run "npm run build".');
+      return;
+    }
+    res.status(status).set({
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-cache",
+      "Content-Security-Policy": contentSecurityPolicy({
+        scriptHashes: page.scriptHashes,
+        host: req.get("host"),
+      }),
+    });
+    if (!indexable) res.set("X-Robots-Tag", "noindex, nofollow");
+    const host = req.get("host");
+    const origin = publicUrl ?? (isSafeHost(host) ? `${req.protocol}://${host}` : null);
+    res.send(origin === null ? page.html : withAbsolutePreviewUrls(page.html, origin));
+  };
+}
+
+/** Logs each request at debug level, with room names masked. */
+function logRequests(logger: Logger): RequestHandler {
+  return (req, res, next) => {
+    const started = performance.now();
+    res.on("finish", () => {
+      logger.debug("Request", {
+        method: req.method,
+        path: req.path.startsWith("/join/") ? "/join/:room" : req.path.slice(0, 200),
+        status: res.statusCode,
+        ms: Math.round(performance.now() - started),
+      });
+    });
+    next();
+  };
+}
+
+/** Compares in constant time, so response timing doesn't leak the token. */
+function hasBearerToken(header: string | undefined, token: string): boolean {
+  const presented = /^Bearer\s+(.+)$/i.exec(header ?? "")?.[1] ?? "";
+  const digest = (value: string) => createHash("sha256").update(value).digest();
+  return timingSafeEqual(digest(presented), digest(token));
+}
+
+function redirectToHttps(req: Request, res: Response, next: NextFunction): void {
+  // Behind a TLS-terminating proxy the original scheme is in this header.
+  const proto = req.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  if (proto === "http") {
+    res.redirect(`https://${req.get("host") ?? req.hostname}${req.originalUrl}`);
+    return;
+  }
+  next();
+}
+
+function removeTrailingSlash(req: Request, res: Response, next: NextFunction): void {
+  if (req.path.length > 1 && req.path.endsWith("/")) {
+    const queryStart = req.originalUrl.indexOf("?");
+    const query = queryStart === -1 ? "" : req.originalUrl.slice(queryStart);
+    // Collapse leading slashes too: redirecting "//example.com/" to
+    // "//example.com" would send the browser to another site.
+    const pathname = "/" + req.path.replace(/^\/+|\/+$/g, "");
+    res.redirect(301, pathname + query);
+    return;
+  }
+  next();
+}
+
+function handleError(logger: Logger): ErrorRequestHandler {
+  return (error: unknown, _req, res, next) => {
+    if (res.headersSent) return next(error);
+    logger.error("Unhandled request error", error);
+    res.status(500).type("text").send("Something went wrong.");
+  };
+}

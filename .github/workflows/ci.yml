@@ -1,0 +1,152 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Lint, typecheck and unit tests (Node ${{ matrix.node }})
+    # Pull requests from this repository's own branches already ran on push.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+
+  audit:
+    name: Audit production dependencies
+    # Pull requests from this repository's own branches already ran on push.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # Fails on known high or critical vulnerabilities in what ships.
+      - run: npm audit --omit=dev --audit-level=high
+
+  e2e:
+    name: End-to-end tests
+    # Pull requests from this repository's own branches already ran on push.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # Firefox for the cross-browser call test.
+      - run: npx playwright install --with-deps chromium firefox
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  relay:
+    name: End-to-end tests through a TURN relay
+    # Pull requests from this repository's own branches already ran on push.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Every call must go through the relay, so these tests only pass if the
+      # server's TURN credentials work with a real coturn.
+      TURN_URLS: turn:127.0.0.1:3479?transport=udp
+      TURN_SECRET: ci-only-turn-secret-0123456789
+      ICE_TRANSPORT_POLICY: relay
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Start a local TURN server
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends coturn
+          turnserver --daemon --listening-ip=127.0.0.1 --relay-ip=127.0.0.1 \
+            --listening-port=3479 --min-port=49300 --max-port=49400 \
+            --use-auth-secret --static-auth-secret="$TURN_SECRET" --realm=zipcall \
+            --fingerprint --no-cli --no-tls --no-dtls --allow-loopback-peers
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-relay
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  docker:
+    name: Docker image
+    # Pull requests from this repository's own branches already ran on push.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose build
+        env:
+          REVISION: ${{ github.sha }}
+      - name: Start the app and wait until it's healthy
+        run: docker compose up --detach --wait --wait-timeout 60
+      - name: Serve pages and report the right revision
+        run: |
+          curl --fail --silent --show-error http://localhost:3000/healthz | tee healthz.json
+          grep --quiet '"revision":"${{ github.sha }}"' healthz.json
+          curl --fail --silent --show-error --output /dev/null http://localhost:3000/
+          curl --fail --silent --show-error --output /dev/null http://localhost:3000/join/ci-check
+      # The image as deployed must pass the same browser tests (the few that
+      # restart their own server are skipped).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Browser tests against the container
+        run: npm run test:e2e
+        env:
+          E2E_BASE_URL: http://localhost:3000
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-docker
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+      - if: always()
+        run: docker compose logs && docker compose down

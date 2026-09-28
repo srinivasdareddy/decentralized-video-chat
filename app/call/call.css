@@ -1,0 +1,689 @@
+/* The call screen. */
+
+.call {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-bg);
+}
+
+/* Top bar */
+
+.call-topbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  height: 60px;
+  padding: 0 16px;
+  transition: opacity var(--transition);
+}
+
+.call-brand {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+}
+
+.call-brand:hover {
+  background: var(--color-surface-raised);
+}
+
+.call-heading {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+
+.call-room {
+  overflow: hidden;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.call-status {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-text-subtle);
+}
+
+.tone-waiting .status-dot {
+  background: var(--color-warning);
+}
+
+.tone-live .status-dot {
+  background: var(--color-success);
+}
+
+.tone-error .status-dot {
+  background: var(--color-danger);
+}
+
+.call-pill {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-full);
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+/* Stage: the other person's video and everything over it */
+
+.call-body {
+  display: flex;
+  flex: 1;
+  gap: 16px;
+  min-height: 0;
+  padding: 0 16px 16px;
+}
+
+.call-stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.remote-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.remote-video[hidden] {
+  display: none;
+}
+
+.stage-message {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px 24px 96px;
+  text-align: center;
+}
+
+.stage-message.is-dim {
+  background: rgb(11 12 14 / 0.6);
+}
+
+.stage-title {
+  font-size: 20px;
+}
+
+.stage-text {
+  max-width: 420px;
+  color: var(--color-text-muted);
+  font-size: 15px;
+}
+
+.stage-avatar {
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: var(--color-surface-raised);
+  color: var(--color-text-subtle);
+}
+
+.invite-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 440px;
+  margin-top: 12px;
+  padding: 6px 6px 6px 14px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-full);
+  background: var(--color-bg);
+}
+
+.invite-url {
+  flex: 1;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage-badge {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius-full);
+  background: rgb(11 12 14 / 0.72);
+  font-size: 13px;
+}
+
+.caption {
+  position: absolute;
+  bottom: 92px;
+  left: 50%;
+  max-width: min(720px, calc(100% - 32px));
+  padding: 10px 16px;
+  border-radius: var(--radius-md);
+  background: rgb(0 0 0 / 0.75);
+  font-size: 18px;
+  line-height: 1.4;
+  text-align: center;
+  transform: translateX(-50%);
+}
+
+.stage-banner {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: 8px 14px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  font-size: 14px;
+  transform: translateX(-50%);
+}
+
+.stage-banner svg {
+  flex: none;
+  color: var(--color-warning);
+}
+
+.sound-button {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* Self-view */
+
+.self-view {
+  position: absolute;
+  right: 16px;
+  bottom: 88px;
+  z-index: 2;
+  width: min(240px, 30%);
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-overlay);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.self-view.is-dragging {
+  cursor: grabbing;
+}
+
+.self-view-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.self-view-video[hidden] {
+  display: none;
+}
+
+.self-view-video.is-mirrored {
+  transform: scaleX(-1);
+}
+
+.self-view-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 100%;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.self-view-label {
+  position: absolute;
+  bottom: 6px;
+  left: 8px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgb(11 12 14 / 0.6);
+  font-size: 12px;
+}
+
+.self-view-muted {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--color-danger);
+  color: #fff;
+}
+
+/* Control bar */
+
+.control-bar {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: var(--color-bg);
+  transform: translateX(-50%);
+  transition: opacity var(--transition);
+}
+
+.call.is-idle .call-topbar,
+.call.is-idle .control-bar {
+  opacity: 0;
+}
+
+.control {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.control:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+}
+
+.control:disabled {
+  cursor: not-allowed;
+  color: var(--color-text-subtle);
+}
+
+.control-off {
+  background: rgb(229 72 77 / 0.16);
+  color: #ff8589;
+}
+
+.control-off:hover:not(:disabled) {
+  background: rgb(229 72 77 / 0.24);
+}
+
+.control-active {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.control-active:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+
+.control-leave {
+  width: 60px;
+  border-radius: var(--radius-full);
+  background: var(--color-danger);
+  color: #fff;
+}
+
+.control-leave:hover:not(:disabled) {
+  background: var(--color-danger-hover);
+}
+
+.control-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Tooltips from the button's label, for pointers that can hover. */
+@media (hover: hover) {
+  .control[data-tooltip]::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: calc(100% + 12px);
+    left: 50%;
+    padding: 6px 10px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-50%);
+    transition: opacity var(--transition-fast);
+  }
+
+  .control[data-tooltip]:hover::after,
+  .control[data-tooltip]:focus-visible::after {
+    opacity: 1;
+  }
+}
+
+/* Chat */
+
+.chat-panel {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: 340px;
+  min-height: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  padding: 0 8px 0 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.chat-title {
+  font-size: 15px;
+}
+
+.chat-close,
+.chat-send {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+}
+
+.chat-close:hover,
+.chat-send:hover:not(:disabled) {
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+}
+
+.chat-send:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.chat-messages {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 16px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.chat-empty {
+  margin: auto 0;
+  color: var(--color-text-subtle);
+  font-size: 14px;
+  text-align: center;
+}
+
+.chat-message {
+  max-width: 85%;
+  padding: 8px 12px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-message.is-own {
+  align-self: flex-end;
+  border-bottom-right-radius: 4px;
+  background: var(--color-surface-hover);
+}
+
+.chat-message.is-peer {
+  align-self: flex-start;
+  border: 1px solid var(--color-border-strong);
+  border-bottom-left-radius: 4px;
+}
+
+.chat-message a {
+  color: var(--color-accent);
+  text-underline-offset: 2px;
+}
+
+.chat-compose {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.chat-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Settings */
+
+.settings-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.settings-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Toasts */
+
+.toast-viewport {
+  position: fixed;
+  bottom: 104px;
+  left: 50%;
+  z-index: 30;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.toast {
+  padding: 10px 16px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-overlay);
+  font-size: 14px;
+  text-align: center;
+  animation: toast-in 160ms ease;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* Phones */
+
+@media (max-width: 640px) {
+  .call-topbar {
+    height: 52px;
+    padding: 0 8px;
+  }
+
+  .call-status {
+    display: none;
+  }
+
+  /* Just the icon, but still announced. */
+  .call-pill {
+    padding: 0 8px;
+  }
+
+  .call-pill-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .call-body {
+    padding: 0;
+  }
+
+  .call-stage {
+    border: 0;
+    border-radius: 0;
+  }
+
+  .self-view {
+    top: 12px;
+    right: 12px;
+    bottom: auto;
+    width: 32%;
+    aspect-ratio: 3 / 4;
+  }
+
+  .control-bar {
+    bottom: 12px;
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .control {
+    width: 40px;
+    height: 40px;
+  }
+
+  .control-leave {
+    width: 52px;
+  }
+
+  .caption {
+    bottom: 80px;
+    font-size: 16px;
+  }
+
+  .chat-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    width: auto;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .toast-viewport {
+    bottom: 76px;
+  }
+
+  /* Beside the self-view rather than over it. */
+  .stage-banner {
+    top: 12px;
+    left: 12px;
+    max-width: calc(68% - 36px);
+    transform: none;
+  }
+}
+
+/* Narrow phones: keep every control on screen. */
+@media (max-width: 400px) {
+  .control-bar {
+    gap: 4px;
+    padding: 4px;
+  }
+
+  .control {
+    width: 36px;
+    height: 36px;
+  }
+
+  .control-leave {
+    width: 48px;
+  }
+}

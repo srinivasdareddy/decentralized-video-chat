@@ -1,22 +1,58 @@
 {
-  "name": "video-chat2",
-  "version": "1.0.0",
-  "description": "",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "name": "zipcall",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Peer-to-peer video calls in the browser, powered by WebRTC",
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "engines": {
+    "node": ">=22.22.0"
   },
-  "author": "",
-  "license": "See License",
+  "scripts": {
+    "dev": "concurrently --kill-others --names server,web --prefix-colors blue,magenta \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "node --watch-path=server --watch-path=shared server/index.ts",
+    "dev:web": "react-router dev",
+    "build": "react-router build",
+    "start": "node server/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "images": "node scripts/brand-images.ts",
+    "typecheck": "react-router typegen && tsc -b",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm test"
+  },
   "dependencies": {
-    "dotenv": "^8.1.0",
-    "express": "^4.17.1",
-    "heroku-ssl-redirect": "0.0.4",
-    "socket.io": "^2.2.0",
-    "twilio": "^3.34.0"
+    "compression": "^1.8.2",
+    "express": "^5.2.1",
+    "socket.io": "^4.8.4",
+    "twilio": "^6.1.1"
   },
   "devDependencies": {
-    "prettier": "2.0.2"
+    "@eslint/js": "^10.0.1",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@playwright/test": "^1.56.1",
+    "@react-router/dev": "^8.4.0",
+    "@types/compression": "^1.8.1",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.20.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "concurrently": "^10.0.5",
+    "eslint": "^10.11.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
+    "lucide-react": "^1.48.0",
+    "prettier": "^3.9.9",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-router": "^8.4.0",
+    "socket.io-client": "^4.8.4",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.70.1",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2"
   }
 }

@@ -1,0 +1,45 @@
+# Weekly dependency updates, grouped so they arrive as a few pull requests
+# instead of dozens. CI runs the full test suite on each one.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # Minor and patch updates together; major versions arrive one at a
+      # time, since they may need code changes.
+      production:
+        dependency-type: production
+        update-types: [minor, patch]
+      development:
+        dependency-type: development
+        update-types: [minor, patch]
+    ignore:
+      # Types for the oldest supported Node.js ("engines" in package.json).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  # The Node.js base image in the Dockerfile.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      # Moved deliberately, from one LTS release to the next.
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
+
+  # Caddy and coturn in docker-compose.yml.
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
